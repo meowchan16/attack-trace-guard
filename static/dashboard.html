@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="The Agency — Private cybersecurity concierge offering discreet perimeter surveillance, automated STRIPS defense planning, Bayesian probability analysis, and tranquil AI reporting.">
   <title>Dashboard — The Agency</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B705C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2L12 22'/%3E%3Cpath d='M12 7C8 7 5 10 5 14C5 18 8 21 12 21'/%3E%3Cpath d='M12 7C16 7 19 10 19 14C19 18 16 21 12 21'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="dashboard-page">
@@ -54,7 +56,7 @@
       <div class="hero-editorial">
         <span class="tiny-label" style="color:rgba(244,241,234,0.65);">Quiet Intelligence Unit</span>
         <h1 class="headline">Calm. Secure. <em>Watched.</em></h1>
-        <div class="hero-status-line">
+        <div class="hero-status-line" aria-live="polite" aria-atomic="true">
           <span id="network-status-dot" class="status-dot"></span>
           <span id="network-status-text">All quiet on the network.</span>
         </div>
@@ -62,13 +64,25 @@
 
       <!-- Attack Simulation Trigger in Hero -->
       <div class="hero-simulation-block">
-        <button id="launch-attack-btn" class="pill-btn pill-btn-outline-terracotta" title="Simulate perimeter intrusion">
-          <span class="terracotta-dot"></span>
-          <span>Launch Attack</span>
-        </button>
-        <button id="reset-demo-btn" class="pill-btn pill-btn-outline-cream" style="margin-left:0.5rem; font-size:0.8125rem; padding:0.45rem 1rem;" title="Reset demo simulation state">
-          <span>Reset demo</span>
-        </button>
+        <div class="action-buttons-group">
+          <button id="launch-attack-btn" class="pill-btn pill-btn-outline-terracotta" title="Simulate perimeter intrusion">
+            <span class="terracotta-dot"></span>
+            <span>Launch Attack</span>
+          </button>
+          <button id="reset-demo-btn" class="pill-btn pill-btn-outline-cream" style="margin-left:0.5rem; font-size:0.8125rem; padding:0.45rem 1rem;" title="Reset demo simulation state">
+            <span>Reset demo</span>
+          </button>
+        </div>
+
+        <!-- 60-Second Auto-demo Switch -->
+        <div class="auto-demo-cluster" title="Launch an attack simulation automatically every 60 seconds">
+          <label class="switch-toggle" for="auto-demo-switch">
+            <input type="checkbox" id="auto-demo-switch" aria-label="Toggle unattended 60-second auto-demo cycle">
+            <span class="slider-round"></span>
+          </label>
+          <span class="auto-demo-label">Auto-demo (60s)</span>
+        </div>
+
         <span class="tiny-helper-text">Simulation only</span>
       </div>
 
@@ -280,7 +294,7 @@
         </div>
 
         <ul class="accordion-list" id="back-issues-list">
-          <li class="back-issues-empty">Loading back issues…</li>
+          <li class="back-issues-empty">Gathering historical archives…</li>
         </ul>
       </div>
     </section>

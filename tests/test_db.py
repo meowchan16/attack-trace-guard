@@ -202,3 +202,18 @@ def test_save_report_and_list_incidents_with_reports(temp_db_path):
     assert results[1]["report"] is None
 
 
+def test_corrupted_database_recovery(temp_db_path):
+    """If database file is corrupted, init_db safely resets and re-seeds agent001."""
+    # Write garbage bytes into the database file
+    with open(temp_db_path, "wb") as f:
+        f.write(b"CORRUPTED_SQLITE_GARBAGE_HEADER_1234567890")
+
+    # init_db should detect corruption, recreate, and seed agent001 without crashing
+    init_db(temp_db_path)
+
+    user = get_user("agent001", db_path=temp_db_path)
+    assert user is not None
+    assert user["username"] == "agent001"
+    assert verify_password("olive-and-cream", user["password_hash"]) is True
+
+

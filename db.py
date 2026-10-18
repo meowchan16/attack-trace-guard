@@ -56,8 +56,24 @@ def init_db(db_path: Optional[str] = None) -> None:
     """
     Initialize all database tables automatically on first run and
     seed the initial default user ('agent001') if not already present.
+    If the database file is corrupted or unreadable, safely re-creates it.
     Prints credentials to the console on first run only.
     """
+    path = db_path or os.getenv("AGENCY_DB_PATH", "agency.db")
+    if path != ":memory:" and os.path.exists(path) and os.path.getsize(path) > 0:
+        try:
+            test_conn = sqlite3.connect(path)
+            res = test_conn.execute("PRAGMA integrity_check;").fetchone()
+            test_conn.close()
+            if not res or res[0] != "ok":
+                raise sqlite3.DatabaseError(f"Integrity check failed: {res}")
+        except Exception as exc:
+            print(f"[The Agency] Warning: Database '{path}' is corrupted ({exc}). Safely recreating...")
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     conn = get_connection(db_path)
     try:
         with conn:

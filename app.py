@@ -63,11 +63,24 @@ except ImportError:
 
 from datetime import datetime, timezone
 
+import secrets
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 logger = logging.getLogger("agency")
 
 # Load environment configuration (.env)
 load_dotenv()
-SESSION_SECRET = os.getenv("SESSION_SECRET", "the-agency-boutique-retreat-default-secret-key-32b")
+_raw_session_secret = os.getenv("SESSION_SECRET", "").strip()
+if not _raw_session_secret or _raw_session_secret == "change-me":
+    SESSION_SECRET = secrets.token_hex(32)
+    print("==================================================================")
+    print("[The Agency] WARNING: SESSION_SECRET is unset or still set to 'change-me'!")
+    print("  Generated a temporary ephemeral secret for this session.")
+    print("  Active sessions will expire across server restarts.")
+    print("  Set a dedicated SESSION_SECRET in .env for production environments.")
+    print("==================================================================")
+else:
+    SESSION_SECRET = _raw_session_secret
 
 # Directory paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -414,6 +427,103 @@ def render_login_html(error: str = "", username: str = "", status_code: int = 20
     return HTMLResponse(content=content, status_code=status_code)
 
 
+def render_error_page(status_code: int, headline: str, message: str) -> HTMLResponse:
+    """
+    Render a calm, serene error page in the forest-and-cream aesthetic
+    with a 'Return to the Agency' pill button.
+    """
+    safe_title = html.escape(headline)
+    safe_msg = html.escape(message)
+    error_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{status_code} — {safe_title} — The Agency</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B705C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2L12 22'/%3E%3Cpath d='M12 7C8 7 5 10 5 14C5 18 8 21 12 21'/%3E%3Cpath d='M12 7C16 7 19 10 19 14C19 18 16 21 12 21'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body.error-page {{
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+    }}
+    .error-card {{
+      max-width: 520px;
+      width: 100%;
+      background: var(--cream-paper);
+      border: 1px solid rgba(38, 38, 31, 0.12);
+      border-radius: var(--radius-lg);
+      padding: 3rem 2.5rem;
+      box-shadow: var(--shadow-subtle);
+      text-align: center;
+    }}
+    .error-code-badge {{
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--olive);
+      margin-bottom: 1rem;
+    }}
+    .error-card h1 {{
+      font-family: var(--font-serif);
+      font-size: 2.25rem;
+      font-weight: 400;
+      line-height: 1.15;
+      margin: 0 0 1rem 0;
+      color: var(--ink);
+    }}
+    .error-card p {{
+      font-family: var(--font-serif);
+      font-size: 1.05rem;
+      line-height: 1.6;
+      color: var(--ink-muted);
+      margin: 0 0 2rem 0;
+    }}
+    .return-pill {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.6rem;
+      background: var(--forest);
+      color: var(--cream);
+      border-radius: var(--radius-pill);
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }}
+    .return-pill:hover {{
+      background: #172B20;
+      transform: translateY(-1px);
+    }}
+    .return-pill:focus-visible {{
+      outline: 2px solid var(--olive);
+      outline-offset: 3px;
+    }}
+  </style>
+</head>
+<body class="error-page">
+  <main class="error-card">
+    <span class="error-code-badge">Dispatch Notice · Status {status_code}</span>
+    <h1>{safe_title}</h1>
+    <p>{safe_msg}</p>
+    <a href="/" class="return-pill">Return to the Agency →</a>
+  </main>
+</body>
+</html>
+"""
+    return HTMLResponse(content=error_html, status_code=status_code)
+
+
 # ============================================================================
 # FastAPI App Lifecycle & Setup
 # ============================================================================
@@ -438,17 +548,55 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+# Custom exception handlers for 401, 404, and 500
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        title = "A Quiet Corridor"
+        msg = exc.detail or "The requested resource could not be found."
+        if exc.status_code == 404:
+            title = "A Room Unaccounted For"
+            msg = "The corridor or folio you sought is not listed in the estate archives."
+        elif exc.status_code == 401:
+            title = "Authentication Required"
+            msg = "Access to this estate wing is reserved for authenticated agents."
+        return render_error_page(exc.status_code, title, msg)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled server error: {exc}")
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return render_error_page(
+            500,
+            "An Unforeseen Disturbance",
+            "Our concierge desk is quietly resolving an internal irregularity. Perimeter defenses remain secure."
+        )
+    return JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+
 # Mount static directory for CSS, JS, and botanical assets
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Signed cookie session middleware
+# Note: For production deployments over HTTPS, set https_only=True
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
     session_cookie="agency_session",
     max_age=14 * 24 * 3600,  # 14 days
     same_site="lax",
-    https_only=False,  # Set to False for local dev convenience
+    https_only=False,  # Set to False for local dev convenience; set to True in production with HTTPS
 )
 
 

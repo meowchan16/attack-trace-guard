@@ -300,10 +300,135 @@ async def test_run_report_and_resolve_pipeline_execution():
         rep_row = cursor.fetchone()
         assert rep_row is not None
         assert rep_row["generated_by"] in ["gemini", "fallback"]
-        assert len(rep_row["body"]) > 20
     finally:
         conn.close()
         simulator.unblock_all()
+
+
+def test_security_headers():
+    """Verify security headers are attached to responses."""
+    client = TestClient(app)
+    res = client.get("/login")
+    assert res.headers.get("X-Content-Type-Options") == "nosniff"
+    assert res.headers.get("X-Frame-Options") == "DENY"
+    assert res.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+
+def test_custom_404_error_page_html_and_json():
+    """Verify custom 404 renders forest-and-cream HTML or JSON depending on Accept header."""
+    client = TestClient(app)
+
+    # 1. HTML request
+    html_res = client.get("/unaccounted-estate-corridor", headers={"Accept": "text/html"})
+    assert html_res.status_code == 404
+    assert "A Room Unaccounted For" in html_res.text
+    assert "Return to the Agency" in html_res.text
+
+    # 2. JSON request
+    json_res = client.get("/unaccounted-estate-corridor", headers={"Accept": "application/json"})
+    assert json_res.status_code == 404
+    assert "detail" in json_res.json()
+
+
+@pytest.mark.anyio
+async def test_full_story_e2e_lifecycle():
+    """
+    End-to-end integration test that simulates the full story:
+    1. Authenticate agent ->
+    2. Trigger attack ->
+    3. Detect attack via logic ->
+    4. Bayes posterior calculation & persistence ->
+    5. STRIPS defense plan synthesis & persistence ->
+    6. GenAI incident report generation & persistence ->
+    7. Defense applied: attacker IP blocked and marked resolved ->
+    8. Back Issues retrieval verifies full historical incident.
+    """
+    import json
+    from app import simulator, run_bayes_analysis, run_planner_analysis, run_report_and_resolve_pipeline
+    from db import get_connection, create_incident, list_incidents_with_reports
+    from modules.logic import detect
+    from simulator import attack_packet
+
+    client = TestClient(app, follow_redirects=False)
+
+    # 1. Login
+    login_res = client.post("/login", data={"username": "agent001", "password": "olive-and-cream"})
+    assert login_res.status_code == 303
+
+    # 2. Trigger attack
+    attack_res = client.post("/api/attack")
+    assert attack_res.status_code == 200
+    assert simulator.attack_active is True
+
+    # Populate simulator window with attack packets to trigger Module 4 detection
+    attacker_ip = "203.0.113.99"
+    for _ in range(25):
+        simulator.window.append(attack_packet(attacker_ip=attacker_ip))
+
+    # 3. Detection via Module 4 Logic
+    detection = detect(simulator.window)
+    assert detection is not None
+    assert detection["attack_type"] == "DDoS"
+    assert detection["src_ip"] == attacker_ip
+
+    incident_id = create_incident(
+        attack_type=detection["attack_type"],
+        src_ip=detection["src_ip"],
+        status="detected"
+    )
+    assert incident_id > 0
+
+    # 4. Module 5 Bayes Analysis
+    await run_bayes_analysis(incident_id, attacker_ip)
+
+    # 5. Module 6 STRIPS Planner
+    await run_planner_analysis(incident_id, attacker_ip)
+
+    # 6. Stage 6 Report & Defense Resolution
+    plan_data = {"steps": [{"description": f"Add a firewall rule to block {attacker_ip}"}]}
+    await run_report_and_resolve_pipeline(incident_id, attacker_ip, plan_data)
+
+    # Verify Attacker is blocked in simulator
+    assert attacker_ip in simulator.blocklist
+
+    # Verify Database state
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, probability, plan_json FROM incidents WHERE id = ?", (incident_id,))
+        inc_row = cursor.fetchone()
+        assert inc_row is not None
+        assert inc_row["status"] == "blocked"
+        assert inc_row["probability"] >= 0.8
+        assert inc_row["plan_json"] is not None
+
+        parsed_plan = json.loads(inc_row["plan_json"])
+        assert "steps" in parsed_plan
+        assert len(parsed_plan["steps"]) >= 3
+
+        cursor.execute("SELECT body, generated_by FROM reports WHERE incident_id = ?", (incident_id,))
+        rep_row = cursor.fetchone()
+        assert rep_row is not None
+        assert rep_row["generated_by"] in ["gemini", "fallback"]
+        assert len(rep_row["body"]) > 50
+    finally:
+        conn.close()
+
+    # 7. Check Back Issues API
+    incidents_res = client.get("/api/incidents")
+    assert incidents_res.status_code == 200
+    incidents_list = incidents_res.json()
+    assert len(incidents_list) >= 1
+    newest = incidents_list[0]
+    assert newest["src_ip"] == attacker_ip
+    assert newest["status"] == "blocked"
+    assert newest["report"] is not None
+    assert newest["plan"] is not None
+
+    # 8. Reset demo
+    reset_res = client.post("/api/reset")
+    assert reset_res.status_code == 200
+    assert attacker_ip not in simulator.blocklist
 
 
 

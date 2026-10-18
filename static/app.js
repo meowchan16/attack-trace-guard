@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initTelemetryWebSocket();
   initAttackButton();
   initResetButton();
+  initAutoDemoSwitch();
+  initReconnectListeners();
   loadBackIssues();
 });
 
@@ -147,6 +149,7 @@ function initAttackButton() {
   if (!attackBtn) return;
 
   attackBtn.addEventListener('click', async () => {
+    if (attackBtn.disabled) return;
     attackBtn.disabled = true;
 
     try {
@@ -158,14 +161,12 @@ function initAttackButton() {
       });
 
       if (res.status === 409) {
-        const data = await res.json();
-        console.warn('[The Agency] Attack already active:', data.detail);
+        // Attack already in progress; keep button disabled
+        attackBtn.disabled = true;
       } else if (!res.ok) {
-        console.error('[The Agency] Error initiating attack simulation:', res.status);
         attackBtn.disabled = false;
       }
-    } catch (err) {
-      console.error('[The Agency] Network error triggering attack:', err);
+    } catch (_) {
       attackBtn.disabled = false;
     }
   });
@@ -176,20 +177,59 @@ function initResetButton() {
   if (!resetBtn) return;
 
   resetBtn.addEventListener('click', async () => {
+    if (resetBtn.disabled) return;
+    resetBtn.disabled = true;
+
     try {
-      const res = await fetch('/api/reset', {
+      await fetch('/api/reset', {
         method: 'POST',
         headers: {
           'Accept': 'application/json'
         }
       });
-      if (!res.ok) {
-        console.error('[The Agency] Error resetting simulation:', res.status);
-      }
-    } catch (err) {
-      console.error('[The Agency] Network error resetting simulation:', err);
+    } catch (_) {
+      // Quiet recovery
+    } finally {
+      resetBtn.disabled = false;
     }
   });
+}
+
+/**
+ * 60-Second Auto-demo Switch Handler
+ */
+let autoDemoInterval = null;
+
+function initAutoDemoSwitch() {
+  const switchEl = document.getElementById('auto-demo-switch');
+  if (!switchEl) return;
+
+  switchEl.addEventListener('change', () => {
+    if (switchEl.checked) {
+      startAutoDemo();
+    } else {
+      stopAutoDemo();
+    }
+  });
+}
+
+function startAutoDemo() {
+  stopAutoDemo();
+  autoDemoInterval = setInterval(() => {
+    if (!isAttackActive) {
+      const attackBtn = document.getElementById('launch-attack-btn');
+      if (attackBtn && !attackBtn.disabled) {
+        attackBtn.click();
+      }
+    }
+  }, 60000);
+}
+
+function stopAutoDemo() {
+  if (autoDemoInterval) {
+    clearInterval(autoDemoInterval);
+    autoDemoInterval = null;
+  }
 }
 
 /**
@@ -203,7 +243,10 @@ async function loadBackIssues() {
     const res = await fetch('/api/incidents', {
       headers: { 'Accept': 'application/json' }
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      listEl.innerHTML = '<li class="back-issues-placeholder">Unable to retrieve back issues at this time. Our records remain secure.</li>';
+      return;
+    }
 
     const incidents = await res.json();
     if (!Array.isArray(incidents) || incidents.length === 0) {
@@ -257,8 +300,8 @@ async function loadBackIssues() {
     }).join('');
 
     initAccordions();
-  } catch (err) {
-    console.error('[The Agency] Failed to load back issues:', err);
+  } catch (_) {
+    listEl.innerHTML = '<li class="back-issues-placeholder">Unable to retrieve back issues at this time. Our records remain secure.</li>';
   }
 }
 
@@ -378,13 +421,24 @@ function connectWebSocket() {
     reconnectTimer = null;
   }
 
+  // Cleanly teardown any prior socket to prevent duplicate connections or listeners
+  if (wsInstance) {
+    wsInstance.onopen = null;
+    wsInstance.onmessage = null;
+    wsInstance.onerror = null;
+    wsInstance.onclose = null;
+    try {
+      wsInstance.close();
+    } catch (_) {}
+    wsInstance = null;
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws`;
 
   try {
     wsInstance = new WebSocket(wsUrl);
-  } catch (err) {
-    console.error('[The Agency] WebSocket initialization error:', err);
+  } catch (_) {
     scheduleReconnect();
     return;
   }
@@ -398,16 +452,13 @@ function connectWebSocket() {
     try {
       const msg = JSON.parse(event.data);
       dispatchTelemetryMessage(msg);
-    } catch (err) {
-      console.error('[The Agency] Message parsing error:', err);
-    }
+    } catch (_) {}
   };
 
   wsInstance.onclose = (event) => {
     updateNetworkStatus(false);
 
     if (event.code === 1008) {
-      console.warn('[The Agency] Unauthorized WebSocket session; redirecting to login.');
       window.location.href = '/login';
       return;
     }
@@ -418,6 +469,25 @@ function connectWebSocket() {
   wsInstance.onerror = () => {
     updateNetworkStatus(false);
   };
+}
+
+/**
+ * Handle tab wake-up and network restoration without duplicate sockets
+ */
+function initReconnectListeners() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      if (!wsInstance || wsInstance.readyState === WebSocket.CLOSED || wsInstance.readyState === WebSocket.CLOSING) {
+        connectWebSocket();
+      }
+    }
+  });
+
+  window.addEventListener('online', () => {
+    if (!wsInstance || wsInstance.readyState === WebSocket.CLOSED || wsInstance.readyState === WebSocket.CLOSING) {
+      connectWebSocket();
+    }
+  });
 }
 
 /**
