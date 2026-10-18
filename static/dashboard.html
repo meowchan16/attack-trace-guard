@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — The Agency</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dashboard-page">
+
+  <!-- ======================================================================
+       HERO PANEL: Forest Green Rounded Container
+       ====================================================================== -->
+  <header class="dashboard-hero fade-in-up">
+    <!-- Floating Pill Navigation Strip -->
+    <nav class="hero-nav" aria-label="Main Navigation">
+      <div class="agency-brand">
+        <!-- Botanical brand icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2L12 22"/>
+          <path d="M12 7C8 7 5 10 5 14C5 18 8 21 12 21"/>
+          <path d="M12 7C16 7 19 10 19 14C19 18 16 21 12 21"/>
+        </svg>
+        <span>The Agency</span>
+      </div>
+
+      <!-- Floating pill nav links -->
+      <ul class="nav-pills">
+        <li><a href="#about" class="active">About</a></li>
+        <li><a href="#traffic">Traffic</a></li>
+        <li><a href="#incidents">Incidents</a></li>
+        <li><a href="#archive">Archive</a></li>
+      </ul>
+
+      <!-- User cluster & Logout button -->
+      <div class="hero-user-cluster">
+        <div class="user-badge">
+          <div id="agent-monogram" class="monogram-avatar" title="Authenticated Agent">··</div>
+          <span id="agent-display-name" class="user-name">Loading…</span>
+        </div>
+
+        <!-- Log out: POST form to /logout -->
+        <form action="/logout" method="POST" style="margin:0;">
+          <button type="submit" class="pill-btn pill-btn-outline-cream" style="padding:0.45rem 1.1rem; font-size:0.8125rem;">
+            <span>Log out</span>
+            <span class="pill-icon-circle">→</span>
+          </button>
+        </form>
+      </div>
+    </nav>
+
+    <!-- Hero Editorial & Headline -->
+    <div class="hero-content">
+      <div class="hero-editorial">
+        <span class="tiny-label" style="color:rgba(244,241,234,0.65);">Quiet Intelligence Unit</span>
+        <h1 class="headline">Calm. Secure. <em>Watched.</em></h1>
+        <div class="hero-status-line">
+          <span id="network-status-dot" class="status-dot"></span>
+          <span id="network-status-text">All quiet on the network.</span>
+        </div>
+      </div>
+
+      <!-- Attack Simulation Trigger in Hero -->
+      <div class="hero-simulation-block">
+        <button id="launch-attack-btn" class="pill-btn pill-btn-outline-terracotta" title="Simulate perimeter intrusion">
+          <span class="terracotta-dot"></span>
+          <span>Launch Attack</span>
+        </button>
+        <span class="tiny-helper-text">Simulation only</span>
+      </div>
+
+      <!-- Date Display in Hero via JS -->
+      <div class="hero-date-block">
+        <span class="tiny-label">Surveillance Cycle</span>
+        <div id="today-date-dashboard" class="date-value">Loading date…</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       MAIN CONTENT: On Warm Cream Surfaces
+       ====================================================================== -->
+  <main>
+
+    <!-- Row of Three Numbered Stat Cards -->
+    <section class="content-section" aria-label="Key Performance Indicators">
+      <div class="stats-grid">
+        <!-- 01 Card -->
+        <article class="stat-card fade-in-up delay-1">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar I</span>
+            <span class="card-number">01</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Seamless Monitoring</h2>
+            <p class="stat-card-caption">Zero friction observability across all distributed estate boundaries.</p>
+          </div>
+        </article>
+
+        <!-- 02 Card -->
+        <article class="stat-card fade-in-up delay-2">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar II</span>
+            <span class="card-number">02</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Timeless Defense</h2>
+            <p class="stat-card-caption">Proactive heuristic cloaking and automated containment rituals.</p>
+          </div>
+        </article>
+
+        <!-- 03 Card -->
+        <article class="stat-card fade-in-up delay-3">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar III</span>
+            <span class="card-number">03</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Quiet Intelligence</h2>
+            <p class="stat-card-caption">Discreet Bayesian appraisal operating without audible alert noise.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Network Traffic Paper Card -->
+    <section id="traffic" class="content-section" aria-label="Network Traffic Telemetry">
+      <div class="traffic-card fade-in-up">
+        <div class="traffic-header">
+          <div>
+            <span class="tiny-label">Telemetry Feed</span>
+            <h2 class="serif-headline" style="font-size:2.2rem; color:var(--ink);">Network Traffic</h2>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span class="tiny-label" style="margin:0;">Sample rate: 100ms</span>
+            <span class="pill-btn pill-btn-outline-dark" style="padding:0.4rem 0.95rem; font-size:0.75rem; pointer-events:none;">
+              Baseline Nominal
+            </span>
+          </div>
+        </div>
+
+        <!-- Three Live Telemetry Metrics -->
+        <div class="traffic-metrics-strip">
+          <div class="metric-pair">
+            <span class="tiny-label">Packets / sec</span>
+            <span id="stat-pps" class="metric-value">0</span>
+          </div>
+          <div class="metric-pair">
+            <span class="tiny-label">Average size</span>
+            <span id="stat-avg-size" class="metric-value">0 B</span>
+          </div>
+          <div class="metric-pair">
+            <span class="tiny-label">Blocked</span>
+            <span id="stat-blocked" class="metric-value">0</span>
+          </div>
+        </div>
+
+        <!-- Real-Time Chart Canvas -->
+        <div class="traffic-chart-container">
+          <canvas id="traffic-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cover Story Panel: Dark Warm Bark Brown -->
+    <section class="content-section" aria-label="Cover Story">
+      <div class="cover-story-panel fade-in-up">
+        <div class="cover-story-grid">
+          <div>
+            <span class="tiny-label" style="color:rgba(244,241,234,0.6);">Special Editorial Dispatch</span>
+            <h2 class="serif-headline" style="font-size:clamp(2.4rem, 4.5vw, 3.8rem); line-height:1.08; margin:0.75rem 0 1.25rem 0; color:var(--cream);">
+              The Architecture of <em>Unseen Sanctuary.</em>
+            </h2>
+            <p style="color:rgba(244,241,234,0.76); line-height:1.65; max-width:520px; font-size:1.025rem;">
+              Behind high stone walls and ancient cypress groves, our perimeter probes trace every incoming packet with the discretion of an invisible concierge.
+            </p>
+          </div>
+
+          <!-- Frosted Glass Card with Dimmed Placeholder Headline -->
+          <div class="cover-frosted-card" id="cover-story-card">
+            <span class="tiny-label" style="color:var(--olive);">Active Dispatch Preview</span>
+            <h3 class="dimmed-headline" id="cover-story-headline">A Disturbance at the Gate</h3>
+            <div id="cover-story-body">
+              <p class="placeholder-copy">
+                A gentle anomaly emerged along the northern perimeter relay at twilight. Correlated via heuristic analysis, quarantined before the estate bells tolled. Full incident log reserved for active dispatch.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Three Numbered Columns on Soft Sage Green Panel -->
+    <section id="incidents" class="content-section" aria-label="Incident Methodology">
+      <div class="sage-feature-panel fade-in-up">
+        <span class="tiny-label" style="color:var(--forest);">Operational Protocol</span>
+        <h2 class="serif-headline panel-headline">Methodology of the <em>Concierge.</em></h2>
+
+        <div class="columns-grid">
+          <!-- Column 1: Recognition -->
+          <div class="feature-col" id="recognition-col">
+            <span class="col-roman">I.</span>
+            <span class="tiny-label" style="color:var(--olive);">Trace & Tag</span>
+            <h3 id="recognition-title">Recognition</h3>
+            <div id="recognition-body">
+              <p>Signature classification distinguishes mundane automated probes from tailored intrusions targeting private infrastructure.</p>
+            </div>
+          </div>
+
+          <!-- Column 2: Probability -->
+          <div class="feature-col" id="probability-col">
+            <span class="col-roman">II.</span>
+            <span class="tiny-label" style="color:var(--olive);">Bayesian Model</span>
+            <h3 id="probability-title">Probability</h3>
+            <div id="probability-body">
+              <p>Dynamic threat scoring weighs anomalous packet cadence against verified behavioral baselines established over seasonal cycles.</p>
+            </div>
+          </div>
+
+          <!-- Column 3: The Plan -->
+          <div class="feature-col" id="plan-col">
+            <span class="col-roman">III.</span>
+            <span class="tiny-label" style="color:var(--olive);">Discreet Action</span>
+            <h3 id="plan-title">The Plan</h3>
+            <div id="plan-body">
+              <p>Immediate tactical containment isolates adversarial route propagation while network consumers experience uninterrupted serenity.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Magazine Feature: Incident Report -->
+    <section class="content-section" aria-label="Incident Report Feature">
+      <article class="magazine-section fade-in-up">
+        <header class="magazine-header">
+          <div>
+            <span class="tiny-label">Dispatch Dispatch No. 84</span>
+            <h2 class="serif-headline" style="font-size:2.5rem; color:var(--ink);">Incident Report</h2>
+          </div>
+          <span class="magazine-byline">Written by our AI correspondent</span>
+        </header>
+
+        <div class="magazine-body">
+          <div class="editorial-text">
+            <p>
+              <span class="drop-cap">A</span>t three minutes past midnight, beneath an overcast autumn sky, the gateway telemetry recorded an unannounced sequence of syn-flood packets originating from a distributed residential cluster. The intrusion was calculated to mimic casual browsing, yet the cadence betrayed synthetic coordination.
+            </p>
+            <p>
+              Within eleven milliseconds, the heuristic engine engaged silent diversion protocols. Rather than escalating audible alerts or disrupting ongoing media streams within the main villa, the ingress route was gently shifted to an ephemeral virtual sandbox. The attacker perceived success; the estate remained tranquil.
+            </p>
+          </div>
+
+          <aside class="magazine-pullquote">
+            <blockquote>
+              “In the silence of the estate, true defense is invisible, anticipating the whisper before the storm.”
+            </blockquote>
+            <cite>— Concierge Journal, Autumn Folio</cite>
+          </aside>
+        </div>
+      </article>
+    </section>
+
+    <!-- Back Issues Accordion List -->
+    <section id="archive" class="content-section" aria-label="Archived Issues">
+      <div class="accordion-section fade-in-up">
+        <div class="accordion-title-wrap">
+          <span class="tiny-label">Historical Dispatches</span>
+          <h2 class="serif-headline" style="font-size:2.4rem; color:var(--ink);">Back Issues</h2>
+        </div>
+
+        <ul class="accordion-list">
+          <!-- Accordion Row 01 -->
+          <li class="accordion-item">
+            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-01-content">
+              <div class="accordion-left">
+                <span class="accordion-num">04</span>
+                <span class="accordion-heading">The Autumn Solstice Perimeter Review</span>
+              </div>
+              <span class="accordion-plus">+</span>
+            </button>
+            <div id="issue-01-content" class="accordion-content">
+              <p>Audit findings from the September firewall calibration: DNS over HTTPS redirection confirmed impervious to cross-site eavesdropping.</p>
+            </div>
+          </li>
+
+          <!-- Accordion Row 02 -->
+          <li class="accordion-item">
+            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-02-content">
+              <div class="accordion-left">
+                <span class="accordion-num">03</span>
+                <span class="accordion-heading">Anomalous Beaconing in the Wine Cellar IoT Hub</span>
+              </div>
+              <span class="accordion-plus">+</span>
+            </button>
+            <div id="issue-02-content" class="accordion-content">
+              <p>Firmware vulnerability in third-party temperature sensors successfully isolated to a detached air-gapped VLAN without service interruption.</p>
+            </div>
+          </li>
+
+          <!-- Accordion Row 03 -->
+          <li class="accordion-item">
+            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-03-content">
+              <div class="accordion-left">
+                <span class="accordion-num">02</span>
+                <span class="accordion-heading">Estate Satellite Uplink Hardening Report</span>
+              </div>
+              <span class="accordion-plus">+</span>
+            </button>
+            <div id="issue-03-content" class="accordion-content">
+              <p>Zero-trust cryptographic handshake established with secondary low-earth orbit constellations during high-wind maritime transit.</p>
+            </div>
+          </li>
+
+          <!-- Accordion Row 04 -->
+          <li class="accordion-item">
+            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-04-content">
+              <div class="accordion-left">
+                <span class="accordion-num">01</span>
+                <span class="accordion-heading">Inaugural Deployment & Heuristic Calibration</span>
+              </div>
+              <span class="accordion-plus">+</span>
+            </button>
+            <div id="issue-04-content" class="accordion-content">
+              <p>Initial seeding of autonomous neural defense boundaries and establishment of the primary Agent 001 executive credentials.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Dashboard Footer -->
+  <footer class="dashboard-footer">
+    <span>The Agency • Boutique Cybersecurity Concierge • All Rights Reserved</span>
+  </footer>
+
+  <!-- Pinned Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
