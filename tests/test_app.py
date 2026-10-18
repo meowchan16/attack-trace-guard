@@ -233,4 +233,78 @@ def test_ws_replays_cached_plan():
         assert "plan" in types
 
 
+def test_api_incidents_auth():
+    """Unauthenticated GET /api/incidents returns 401; authenticated returns 200 list."""
+    client = TestClient(app, follow_redirects=False)
+
+    # 1. Unauthenticated
+    unauth_res = client.get("/api/incidents")
+    assert unauth_res.status_code == 401
+
+    # 2. Authenticated
+    client.post("/login", data={"username": "agent001", "password": "olive-and-cream"})
+    auth_res = client.get("/api/incidents")
+    assert auth_res.status_code == 200
+    assert isinstance(auth_res.json(), list)
+
+
+def test_api_reset_auth():
+    """POST /api/reset clears blocklist and resets active replay state."""
+    from app import simulator
+    import app as app_module
+
+    client = TestClient(app, follow_redirects=False)
+
+    # 1. Unauthenticated
+    unauth_res = client.post("/api/reset")
+    assert unauth_res.status_code == 401
+
+    # 2. Authenticated
+    client.post("/login", data={"username": "agent001", "password": "olive-and-cream"})
+
+    # Set some state to verify reset clears it
+    simulator.block_ip("203.0.113.99")
+    app_module.last_plan = {"type": "plan"}
+
+    res = client.post("/api/reset")
+    assert res.status_code == 200
+    assert res.json()["status"] == "reset"
+    assert "203.0.113.99" not in simulator.blocklist
+    assert app_module.last_plan is None
+
+
+@pytest.mark.anyio
+async def test_run_report_and_resolve_pipeline_execution():
+    """Verify run_report_and_resolve_pipeline saves report and marks incident blocked."""
+    from app import run_report_and_resolve_pipeline, simulator
+    from db import create_incident, get_connection
+
+    incident_id = create_incident("DDoS", "203.0.113.99")
+    plan = {"steps": [{"description": "Add a firewall rule to block 203.0.113.99"}]}
+
+    await run_report_and_resolve_pipeline(incident_id, "203.0.113.99", plan)
+
+    # Attacker IP must be blocked
+    assert "203.0.113.99" in simulator.blocklist
+
+    # Incident status must be 'blocked' and report must exist
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM incidents WHERE id = ?", (incident_id,))
+        inc_row = cursor.fetchone()
+        assert inc_row is not None
+        assert inc_row["status"] == "blocked"
+
+        cursor.execute("SELECT body, generated_by FROM reports WHERE incident_id = ?", (incident_id,))
+        rep_row = cursor.fetchone()
+        assert rep_row is not None
+        assert rep_row["generated_by"] in ["gemini", "fallback"]
+        assert len(rep_row["body"]) > 20
+    finally:
+        conn.close()
+        simulator.unblock_all()
+
+
+
 

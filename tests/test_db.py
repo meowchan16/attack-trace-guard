@@ -22,9 +22,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from db import init_db, get_user, verify_password, hash_password, create_incident, update_incident
+    from db import (
+        init_db, get_user, verify_password, hash_password,
+        create_incident, update_incident, save_report, list_incidents_with_reports
+    )
 except ImportError:
-    from agency.db import init_db, get_user, verify_password, hash_password, create_incident, update_incident
+    from agency.db import (
+        init_db, get_user, verify_password, hash_password,
+        create_incident, update_incident, save_report, list_incidents_with_reports
+    )
 
 
 @pytest.fixture
@@ -139,4 +145,60 @@ def test_create_and_update_incident(temp_db_path):
     conn.close()
 
     assert updated_status == "ended"
+
+
+def test_save_report_and_list_incidents_with_reports(temp_db_path):
+    """
+    Verify save_report attaches report to incident, list_incidents_with_reports
+    returns newest first, and incidents without a report return report=None.
+    """
+    init_db(temp_db_path)
+
+    # 1. Create first incident (no report)
+    inc1_id = create_incident(
+        attack_type="PortScan",
+        src_ip="192.168.1.100",
+        ts="2026-10-18T10:00:00Z",
+        status="resolved",
+        probability=0.45,
+        db_path=temp_db_path
+    )
+
+    # 2. Create second incident (with report)
+    inc2_id = create_incident(
+        attack_type="DDoS",
+        src_ip="203.0.113.99",
+        ts="2026-10-18T11:00:00Z",
+        status="blocked",
+        probability=0.95,
+        plan_json='{"steps": [{"action": "add_firewall_rule"}]}',
+        db_path=temp_db_path
+    )
+
+    rep2_id = save_report(
+        incident_id=inc2_id,
+        body="At 11:00 AM, a DDoS attack was detected and blocked.",
+        generated_by="gemini",
+        ts="2026-10-18T11:01:00Z",
+        db_path=temp_db_path
+    )
+    assert rep2_id > 0
+
+    # 3. List incidents with reports
+    results = list_incidents_with_reports(db_path=temp_db_path)
+    assert len(results) == 2
+
+    # Newest first
+    assert results[0]["id"] == inc2_id
+    assert results[0]["attack_type"] == "DDoS"
+    assert results[0]["plan"] is not None
+    assert results[0]["plan"]["steps"][0]["action"] == "add_firewall_rule"
+    assert results[0]["report"] is not None
+    assert results[0]["report"]["generated_by"] == "gemini"
+    assert "DDoS attack was detected" in results[0]["report"]["body"]
+
+    # Older incident has report=None
+    assert results[1]["id"] == inc1_id
+    assert results[1]["report"] is None
+
 

@@ -66,6 +66,9 @@
           <span class="terracotta-dot"></span>
           <span>Launch Attack</span>
         </button>
+        <button id="reset-demo-btn" class="pill-btn pill-btn-outline-cream" style="margin-left:0.5rem; font-size:0.8125rem; padding:0.45rem 1rem;" title="Reset demo simulation state">
+          <span>Reset demo</span>
+        </button>
         <span class="tiny-helper-text">Simulation only</span>
       </div>
 
@@ -178,7 +181,10 @@
 
           <!-- Frosted Glass Card with Dimmed Placeholder Headline -->
           <div class="cover-frosted-card" id="cover-story-card">
-            <span class="tiny-label" style="color:var(--olive);">Active Dispatch Preview</span>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="tiny-label" style="color:var(--olive);">Active Dispatch Preview</span>
+              <span id="cover-story-resolved-tag" class="resolved-tag" style="display:none;">Resolved</span>
+            </div>
             <h3 class="dimmed-headline" id="cover-story-headline">A Disturbance at the Gate</h3>
             <div id="cover-story-body">
               <p class="placeholder-copy">
@@ -232,17 +238,21 @@
 
     <!-- Magazine Feature: Incident Report -->
     <section class="content-section" aria-label="Incident Report Feature">
-      <article class="magazine-section fade-in-up">
+      <article class="magazine-section fade-in-up" id="incident-report-article">
         <header class="magazine-header">
           <div>
-            <span class="tiny-label">Dispatch Dispatch No. 84</span>
-            <h2 class="serif-headline" style="font-size:2.5rem; color:var(--ink);">Incident Report</h2>
+            <span class="tiny-label" id="incident-report-dispatch-no">Dispatch Dispatch No. 84</span>
+            <h2 class="serif-headline" id="incident-report-headline" style="font-size:2.5rem; color:var(--ink);">Incident Report</h2>
           </div>
-          <span class="magazine-byline">Written by our AI correspondent</span>
+          <div class="magazine-byline-cluster">
+            <span class="magazine-byline" id="incident-report-byline-text">Written by our AI correspondent</span>
+            <span id="incident-report-model-tag" class="pill-tag pill-tag-olive" style="display:none;">Gemini</span>
+            <span id="incident-report-timestamp" class="report-timestamp"></span>
+          </div>
         </header>
 
-        <div class="magazine-body">
-          <div class="editorial-text">
+        <div class="magazine-body" id="incident-report-body-container">
+          <div class="editorial-text" id="incident-report-body">
             <p>
               <span class="drop-cap">A</span>t three minutes past midnight, beneath an overcast autumn sky, the gateway telemetry recorded an unannounced sequence of syn-flood packets originating from a distributed residential cluster. The intrusion was calculated to mimic casual browsing, yet the cadence betrayed synthetic coordination.
             </p>
@@ -251,11 +261,11 @@
             </p>
           </div>
 
-          <aside class="magazine-pullquote">
-            <blockquote>
+          <aside class="magazine-pullquote" id="incident-report-pullquote-wrap">
+            <blockquote id="incident-report-pullquote">
               “In the silence of the estate, true defense is invisible, anticipating the whisper before the storm.”
             </blockquote>
-            <cite>— Concierge Journal, Autumn Folio</cite>
+            <cite id="incident-report-pullquote-cite">— Concierge Journal, Autumn Folio</cite>
           </aside>
         </div>
       </article>
@@ -269,62 +279,8 @@
           <h2 class="serif-headline" style="font-size:2.4rem; color:var(--ink);">Back Issues</h2>
         </div>
 
-        <ul class="accordion-list">
-          <!-- Accordion Row 01 -->
-          <li class="accordion-item">
-            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-01-content">
-              <div class="accordion-left">
-                <span class="accordion-num">04</span>
-                <span class="accordion-heading">The Autumn Solstice Perimeter Review</span>
-              </div>
-              <span class="accordion-plus">+</span>
-            </button>
-            <div id="issue-01-content" class="accordion-content">
-              <p>Audit findings from the September firewall calibration: DNS over HTTPS redirection confirmed impervious to cross-site eavesdropping.</p>
-            </div>
-          </li>
-
-          <!-- Accordion Row 02 -->
-          <li class="accordion-item">
-            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-02-content">
-              <div class="accordion-left">
-                <span class="accordion-num">03</span>
-                <span class="accordion-heading">Anomalous Beaconing in the Wine Cellar IoT Hub</span>
-              </div>
-              <span class="accordion-plus">+</span>
-            </button>
-            <div id="issue-02-content" class="accordion-content">
-              <p>Firmware vulnerability in third-party temperature sensors successfully isolated to a detached air-gapped VLAN without service interruption.</p>
-            </div>
-          </li>
-
-          <!-- Accordion Row 03 -->
-          <li class="accordion-item">
-            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-03-content">
-              <div class="accordion-left">
-                <span class="accordion-num">02</span>
-                <span class="accordion-heading">Estate Satellite Uplink Hardening Report</span>
-              </div>
-              <span class="accordion-plus">+</span>
-            </button>
-            <div id="issue-03-content" class="accordion-content">
-              <p>Zero-trust cryptographic handshake established with secondary low-earth orbit constellations during high-wind maritime transit.</p>
-            </div>
-          </li>
-
-          <!-- Accordion Row 04 -->
-          <li class="accordion-item">
-            <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-04-content">
-              <div class="accordion-left">
-                <span class="accordion-num">01</span>
-                <span class="accordion-heading">Inaugural Deployment & Heuristic Calibration</span>
-              </div>
-              <span class="accordion-plus">+</span>
-            </button>
-            <div id="issue-04-content" class="accordion-content">
-              <p>Initial seeding of autonomous neural defense boundaries and establishment of the primary Agent 001 executive credentials.</p>
-            </div>
-          </li>
+        <ul class="accordion-list" id="back-issues-list">
+          <li class="back-issues-empty">Loading back issues…</li>
         </ul>
       </div>
     </section>

@@ -103,12 +103,24 @@ class Simulator:
         self._attack_until = None
 
     def block_ip(self, ip: str) -> None:
-        """Add an IP to the blocklist."""
+        """Add an IP to the blocklist and remove any buffered packets from it."""
         self.blocklist.add(ip)
+        self.clear_attack_traffic(ip)
 
     def unblock_ip(self, ip: str) -> None:
         """Remove an IP from the blocklist."""
         self.blocklist.discard(ip)
+
+    def unblock_all(self) -> None:
+        """Clear all IPs from the blocklist."""
+        self.blocklist.clear()
+
+    def clear_attack_traffic(self, ip: Optional[str] = None) -> None:
+        """Remove attack packets (or packets from a specific IP) from the rolling window."""
+        if ip is not None:
+            self.window = deque([p for p in self.window if p.get("src_ip") != ip])
+        else:
+            self.window = deque([p for p in self.window if not p.get("is_attack", False)])
 
     def prune_window(self, current_time: float) -> None:
         """Remove all packets older than window_seconds (5.0s) from the rolling deque."""

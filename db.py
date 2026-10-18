@@ -5,10 +5,11 @@ Uses the Python standard library's sqlite3 module with parameterized queries,
 bcrypt password hashing, and automatic schema initialization and seeding.
 """
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import bcrypt
 
 # Default database filename (can be overridden via environment or parameter)
@@ -222,6 +223,116 @@ def update_incident(
         conn.close()
 
 
+def save_report(
+    incident_id: int,
+    body: str,
+    generated_by: str,
+    ts: Optional[str] = None,
+    db_path: Optional[str] = None
+) -> int:
+    """
+    Save an incident report to the reports table using parameterized queries.
+    Stores timestamp automatically if not provided.
+    Returns the newly inserted report ID.
+    """
+    now_ts = ts or datetime.now(timezone.utc).isoformat()
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO reports (incident_id, ts, body, generated_by)
+                VALUES (?, ?, ?, ?)
+                """,
+                (incident_id, now_ts, body, generated_by)
+            )
+            return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def list_incidents_with_reports(
+    limit: int = 20,
+    db_path: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    List newest incidents with associated reports (limit default 20), newest first.
+    Returns list of dicts:
+    {
+        "id": int,
+        "ts": str,
+        "attack_type": str,
+        "src_ip": str,
+        "probability": float,
+        "status": str,
+        "plan": dict or None (parsed from plan_json),
+        "report": {"body": str, "generated_by": str, "ts": str} or None
+    }
+    """
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, ts, attack_type, src_ip, probability, status, plan_json
+            FROM incidents
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        incident_rows = cursor.fetchall()
+
+        results = []
+        for inc in incident_rows:
+            inc_dict = dict(inc)
+            inc_id = inc_dict["id"]
+
+            plan_obj = None
+            if inc_dict.get("plan_json"):
+                try:
+                    plan_obj = json.loads(inc_dict["plan_json"])
+                except Exception:
+                    plan_obj = None
+
+            cursor.execute(
+                """
+                SELECT id, ts, body, generated_by
+                FROM reports
+                WHERE incident_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (inc_id,)
+            )
+            report_row = cursor.fetchone()
+            report_dict = None
+            if report_row:
+                report_dict = {
+                    "id": report_row["id"],
+                    "body": report_row["body"],
+                    "generated_by": report_row["generated_by"],
+                    "ts": report_row["ts"]
+                }
+
+            results.append({
+                "id": inc_dict["id"],
+                "ts": inc_dict["ts"],
+                "attack_type": inc_dict["attack_type"],
+                "src_ip": inc_dict["src_ip"],
+                "probability": inc_dict["probability"],
+                "status": inc_dict["status"],
+                "plan": plan_obj,
+                "report": report_dict
+            })
+
+        return results
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     init_db()
+
 

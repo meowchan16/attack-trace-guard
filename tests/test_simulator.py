@@ -118,3 +118,23 @@ def test_tick_summary_keys():
     assert "avg_size" in summary and isinstance(summary["avg_size"], (int, float))
     assert summary["packets"] >= 3  # Normal packets range 3 to 7
     assert summary["blocked"] == 0  # Blocklist is empty
+
+
+def test_block_ip_and_unblock_all():
+    """Verify after block_ip packets are dropped, and unblock_all lets them through again."""
+    sim = Simulator()
+    attacker_ip = "203.0.113.99"
+    sim.attack_active = True
+
+    # 1. Block attacker IP -> packets from that IP are dropped
+    sim.block_ip(attacker_ip)
+    summary_blocked = sim.tick()
+    assert summary_blocked["blocked"] > 0
+    assert not any(p["src_ip"] == attacker_ip for p in sim.window)
+
+    # 2. Unblock all -> packets from attacker IP pass through into window again
+    sim.unblock_all()
+    summary_unblocked = sim.tick()
+    assert summary_unblocked["blocked"] == 0
+    assert any(p["src_ip"] == attacker_ip for p in sim.window)
+

@@ -1595,7 +1595,140 @@ h1 em, h2 em, h3 em, .serif-headline em {
   .plan-step-indicator {
     transition: none !important;
   }
+  .editorial-paragraph {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
+
+/* ==========================================================================
+   Stage 6: Resolved Tag, Magazine Feature & Back Issues UI
+   ========================================================================== */
+
+.resolved-tag {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  background: rgba(107, 112, 92, 0.2);
+  color: var(--olive);
+  border: 1px solid rgba(107, 112, 92, 0.35);
+}
+
+.magazine-byline-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pill-tag {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 9999px;
+}
+
+.pill-tag-olive {
+  background: rgba(107, 112, 92, 0.15);
+  color: var(--olive);
+  border: 1px solid rgba(107, 112, 92, 0.35);
+}
+
+.pill-tag-terracotta {
+  background: rgba(181, 101, 74, 0.15);
+  color: var(--terracotta);
+  border: 1px solid rgba(181, 101, 74, 0.35);
+}
+
+.report-timestamp {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.editorial-paragraph {
+  opacity: 0;
+  animation: editorialFadeIn 0.6s ease forwards;
+  margin-bottom: 1.25rem;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+@keyframes editorialFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.magazine-pullquote.editorial-hairlines {
+  border-left: none;
+  border-top: 1px solid rgba(38, 38, 31, 0.12);
+  border-bottom: 1px solid rgba(38, 38, 31, 0.12);
+  padding: 1.5rem 0.5rem;
+  margin: 1.5rem 0;
+}
+
+.back-issues-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.back-issue-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+  margin-right: 1.25rem;
+}
+
+.back-issue-date {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.back-issue-content-wrap {
+  padding: 1.25rem 0.5rem 2rem 0.5rem;
+  border-top: 1px solid rgba(38, 38, 31, 0.08);
+  color: var(--ink);
+}
+
+.back-issue-report-text {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  white-space: pre-line;
+  margin-bottom: 1rem;
+  color: var(--ink);
+}
+
+.back-issue-plan-list {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+.back-issue-plan-list li {
+  margin-bottom: 0.35rem;
+}
+
 
 
 

@@ -26,9 +26,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 try:
-    from db import get_user, init_db, verify_password, create_incident, update_incident
+    from db import (
+        get_user, init_db, verify_password, create_incident,
+        update_incident, save_report, list_incidents_with_reports
+    )
 except ImportError:
-    from agency.db import get_user, init_db, verify_password, create_incident, update_incident
+    from agency.db import (
+        get_user, init_db, verify_password, create_incident,
+        update_incident, save_report, list_incidents_with_reports
+    )
 
 try:
     from simulator import Simulator
@@ -49,6 +55,11 @@ try:
     from modules.planner import make_plan
 except ImportError:
     from agency.modules.planner import make_plan
+
+try:
+    from genai import write_report
+except ImportError:
+    from agency.genai import write_report
 
 from datetime import datetime, timezone
 
@@ -71,6 +82,8 @@ current_incident_id: Optional[int] = None
 last_detection: Optional[Dict[str, Any]] = None
 last_bayes: Optional[Dict[str, Any]] = None
 last_plan: Optional[Dict[str, Any]] = None
+last_report: Optional[Dict[str, Any]] = None
+last_resolved: Optional[Dict[str, Any]] = None
 prev_attack_active: bool = False
 
 
@@ -246,8 +259,80 @@ async def run_planner_analysis(incident_id: int, src_ip: str):
         last_plan = plan_payload
         await manager.broadcast(plan_payload)
 
+        # Trigger Stage 6 Report & Defense pipeline ~1 second after Plan
+        asyncio.create_task(run_report_and_resolve_pipeline(incident_id, src_ip, plan_result))
+
     except Exception as exc:
         logger.exception(f"Error in Planner analysis: {exc}")
+
+
+async def run_report_and_resolve_pipeline(incident_id: int, src_ip: str, plan_data: Any):
+    """
+    Stage 6 automated response pipeline:
+    1. Waits ~1s, generates incident report via genai.write_report (off the event loop),
+       saves it with db.save_report, and broadcasts {type: "report", ...}.
+    2. Waits ~1s, applies defense: adds attacker IP to simulator blocklist,
+       stops attack traffic immediately, and updates incident status to 'blocked'.
+    3. Broadcasts {type: "resolved", incident_id, src_ip, status: "blocked"}.
+    """
+    global last_report, last_resolved, current_incident_id
+    await asyncio.sleep(1.0)
+    try:
+        incident_info = {
+            "id": incident_id,
+            "attack_type": "DDoS",
+            "src_ip": src_ip,
+            "ts": datetime.now(timezone.utc).isoformat()
+        }
+
+        # 1. Report generation (off the event loop)
+        report_body, generated_by = await asyncio.to_thread(
+            write_report, incident_info, plan_data, 0.95
+        )
+
+        report_ts = datetime.now(timezone.utc).isoformat()
+        report_id = save_report(
+            incident_id=incident_id,
+            body=report_body,
+            generated_by=generated_by,
+            ts=report_ts
+        )
+
+        report_payload = {
+            "type": "report",
+            "incident_id": incident_id,
+            "report_id": report_id,
+            "body": report_body,
+            "generated_by": generated_by,
+            "ts": report_ts
+        }
+        last_report = report_payload
+        await manager.broadcast(report_payload)
+
+        # Pause about 1 second between stages
+        await asyncio.sleep(1.0)
+
+        # 2. Apply defense: block IP, stop attack traffic immediately, update status to 'blocked'
+        simulator.block_ip(src_ip)
+        simulator.stop_attack()
+        simulator.clear_attack_traffic(src_ip)
+
+        update_incident(incident_id, status="blocked")
+        current_incident_id = None
+
+        # 3. Broadcast resolved event
+        resolved_payload = {
+            "type": "resolved",
+            "incident_id": incident_id,
+            "src_ip": src_ip,
+            "status": "blocked"
+        }
+        last_resolved = resolved_payload
+        await manager.broadcast(resolved_payload)
+
+    except Exception as exc:
+        logger.exception(f"Error in report and resolve pipeline: {exc}")
+
 
 
 # ============================================================================
@@ -518,13 +603,57 @@ async def trigger_attack(request: Request):
             status_code=409
         )
 
-    global last_bayes, last_plan
+    global last_bayes, last_plan, last_report, last_resolved
     last_bayes = None
     last_plan = None
+    last_report = None
+    last_resolved = None
 
     simulator.start_attack(duration=8.0)
     await manager.broadcast({"type": "attack_started"})
     return {"status": "attack_started", "duration": 8.0}
+
+
+@app.post("/api/reset")
+async def reset_demo(request: Request):
+    """
+    POST /api/reset -> clears blocklist, stops any active attack,
+    resets in-memory last event replay state, and broadcasts {type: 'reset'}.
+    Does NOT delete incidents or reports.
+    Requires authenticated session.
+    """
+    username = request.session.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    global last_detection, last_bayes, last_plan, last_report, last_resolved, current_incident_id
+    simulator.unblock_all()
+    simulator.stop_attack()
+    simulator.clear_attack_traffic()
+
+    last_detection = None
+    last_bayes = None
+    last_plan = None
+    last_report = None
+    last_resolved = None
+    current_incident_id = None
+
+    await manager.broadcast({"type": "reset"})
+    return {"status": "reset", "detail": "Simulation reset: blocklist cleared and replay state reset"}
+
+
+@app.get("/api/incidents")
+async def get_incidents(request: Request):
+    """
+    GET /api/incidents -> returns list of incidents with reports, newest first.
+    Requires authenticated session.
+    """
+    username = request.session.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    incidents = list_incidents_with_reports()
+    return JSONResponse(incidents)
 
 
 @app.websocket("/ws")
@@ -533,7 +662,7 @@ async def websocket_endpoint(websocket: WebSocket):
     WS /ws -> Real-time telemetry stream.
     - Requires authenticated session cookie; closed with code 1008 if unauthenticated.
     - On connect: replays the last 30 seconds of telemetry summaries.
-    - Replays active attack state, last detection, last Bayes explanation, and last plan if available.
+    - Replays active attack state, last detection, last Bayes explanation, last plan, last report, and last resolved.
     - Broadcasts live 1-second summary updates from simulator.
     """
     username = websocket.session.get("username")
@@ -553,22 +682,27 @@ async def websocket_endpoint(websocket: WebSocket):
         if simulator.attack_active:
             await websocket.send_json({"type": "attack_started"})
 
-        # 3. If there is a cached detection, send it so page refresh mid-attack still shows it
+        # 3. Replay cached progression events so page refresh mid-story shows the full context
         if last_detection:
             await websocket.send_json(last_detection)
 
-        # 4. If there is a cached Bayes event, send it so page refresh mid-attack still shows it
         if last_bayes:
             await websocket.send_json(last_bayes)
 
-        # 5. If there is a cached Plan event, send it so page refresh mid-attack still shows it
         if last_plan:
             await websocket.send_json(last_plan)
+
+        if last_report:
+            await websocket.send_json(last_report)
+
+        if last_resolved:
+            await websocket.send_json(last_resolved)
 
         # Keep connection open and await any client frames
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
         manager.disconnect(websocket)
+
 
 

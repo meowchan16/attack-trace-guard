@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initAccordions();
   initTelemetryWebSocket();
   initAttackButton();
+  initResetButton();
+  loadBackIssues();
 });
 
 /**
@@ -167,6 +169,97 @@ function initAttackButton() {
       attackBtn.disabled = false;
     }
   });
+}
+
+function initResetButton() {
+  const resetBtn = document.getElementById('reset-demo-btn');
+  if (!resetBtn) return;
+
+  resetBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/reset', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        console.error('[The Agency] Error resetting simulation:', res.status);
+      }
+    } catch (err) {
+      console.error('[The Agency] Network error resetting simulation:', err);
+    }
+  });
+}
+
+/**
+ * Fetch past incidents from /api/incidents and render the Back Issues accordion
+ */
+async function loadBackIssues() {
+  const listEl = document.getElementById('back-issues-list');
+  if (!listEl) return;
+
+  try {
+    const res = await fetch('/api/incidents', {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return;
+
+    const incidents = await res.json();
+    if (!Array.isArray(incidents) || incidents.length === 0) {
+      listEl.innerHTML = '<li class="back-issues-empty">No back issues yet.</li>';
+      return;
+    }
+
+    listEl.innerHTML = incidents.map((inc, idx) => {
+      const num = String(idx + 1).padStart(2, '0');
+      let dateStr = '';
+      if (inc.ts) {
+        try {
+          const d = new Date(inc.ts);
+          dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (_) {
+          dateStr = inc.ts;
+        }
+      }
+
+      const probVal = inc.probability !== undefined ? inc.probability : 0.95;
+      const probPct = Math.round(probVal * 100);
+      const isTerracotta = probPct >= 80;
+      const probTagClass = isTerracotta ? 'pill-tag-terracotta' : 'pill-tag-olive';
+
+      const reportText = inc.report && inc.report.body ? inc.report.body : '';
+      const planSteps = (inc.plan && inc.plan.steps) ? inc.plan.steps : [];
+      const planStepsHtml = planSteps.map(s => `<li>${escapeHtml(s.description || s.action || s)}</li>`).join('');
+
+      return `
+        <li class="accordion-item" id="issue-${inc.id}">
+          <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-${inc.id}-content">
+            <div class="accordion-left">
+              <span class="accordion-num">${num}</span>
+              <span class="accordion-heading">${escapeHtml(inc.attack_type || 'Incident')} from ${escapeHtml(inc.src_ip || 'Unknown')}</span>
+            </div>
+            <div class="back-issue-meta">
+              <span class="back-issue-date">${escapeHtml(dateStr)}</span>
+              <span class="pill-tag ${probTagClass}">${probPct}%</span>
+              <span class="pill-tag pill-tag-olive">${escapeHtml(inc.status || 'recorded')}</span>
+            </div>
+            <span class="accordion-plus">+</span>
+          </button>
+          <div id="issue-${inc.id}-content" class="accordion-content">
+            <div class="back-issue-content-wrap">
+              ${reportText ? `<p class="back-issue-report-text">${escapeHtml(reportText)}</p>` : '<p class="back-issue-report-text" style="font-style:italic; color:var(--ink-muted);">No editorial report recorded for this incident.</p>'}
+              ${planStepsHtml ? `<strong class="tiny-label" style="color:var(--forest); display:block; margin-top:0.75rem;">Defensive Containment Sequence</strong><ol class="back-issue-plan-list">${planStepsHtml}</ol>` : ''}
+            </div>
+          </div>
+        </li>
+      `;
+    }).join('');
+
+    initAccordions();
+  } catch (err) {
+    console.error('[The Agency] Failed to load back issues:', err);
+  }
 }
 
 /**
@@ -370,10 +463,13 @@ function dispatchTelemetryMessage(msg) {
       handlePlanMessage(msg);
       break;
     case 'report':
-      // Reserved for Stage 5: AI editorial report generation
+      handleReportMessage(msg);
       break;
     case 'resolved':
-      // Reserved for Stage 5: Perimeter restoration
+      handleResolvedMessage(msg);
+      break;
+    case 'reset':
+      handleResetMessage(msg);
       break;
 
     default:
@@ -773,3 +869,203 @@ function updateNetworkStatus(isConnected) {
     statusDotEl.classList.add('disconnected');
   }
 }
+
+/**
+ * Handle report event (Module 6 / Stage 6):
+ * - Fills the "Incident Report" section as an editorial magazine feature
+ * - Headline with serif styling: "The Gate Was <em>Secured</em>"
+ * - Tag pill: "Gemini" (olive) or "Template" (terracotta), plus formatted timestamp
+ * - Pull quote taken from report's first sentence, framed between hairlines
+ * - Paragraphs with drop cap on initial character, fading in one by one
+ * - Plain TEXT only (textContent) to prevent injection
+ */
+function handleReportMessage(msg) {
+  const headlineEl = document.getElementById('incident-report-headline');
+  if (headlineEl) {
+    headlineEl.innerHTML = 'The Gate Was <em>Secured</em>';
+  }
+
+  const modelTagEl = document.getElementById('incident-report-model-tag');
+  if (modelTagEl) {
+    const isGemini = (msg.generated_by || '').toLowerCase() === 'gemini';
+    modelTagEl.textContent = isGemini ? 'Gemini' : 'Template';
+    modelTagEl.className = `pill-tag ${isGemini ? 'pill-tag-olive' : 'pill-tag-terracotta'}`;
+    modelTagEl.style.display = 'inline-block';
+  }
+
+  const timestampEl = document.getElementById('incident-report-timestamp');
+  if (timestampEl && msg.ts) {
+    try {
+      const d = new Date(msg.ts);
+      timestampEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      timestampEl.textContent = msg.ts;
+    }
+  }
+
+  const bodyEl = document.getElementById('incident-report-body');
+  if (bodyEl && msg.body) {
+    bodyEl.innerHTML = '';
+    const paragraphs = msg.body.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    paragraphs.forEach((pText, idx) => {
+      const p = document.createElement('p');
+      p.className = 'editorial-paragraph';
+      p.style.animationDelay = prefersReducedMotion ? '0ms' : `${idx * 400}ms`;
+
+      if (idx === 0 && pText.length > 0) {
+        const dropCap = document.createElement('span');
+        dropCap.className = 'drop-cap';
+        dropCap.textContent = pText[0];
+        p.appendChild(dropCap);
+        p.appendChild(document.createTextNode(pText.substring(1)));
+      } else {
+        p.textContent = pText;
+      }
+      bodyEl.appendChild(p);
+    });
+  }
+
+  const pullquoteEl = document.getElementById('incident-report-pullquote');
+  const pullquoteWrap = document.getElementById('incident-report-pullquote-wrap');
+  if (pullquoteEl && msg.body) {
+    const firstSentence = msg.body.split(/[.!?]/)[0].trim();
+    if (firstSentence) {
+      pullquoteEl.textContent = `“${firstSentence}.”`;
+    }
+    if (pullquoteWrap) {
+      pullquoteWrap.classList.add('editorial-hairlines');
+    }
+  }
+}
+
+/**
+ * Handle resolved event (Stage 6):
+ * - Status line: "Threat blocked. All quiet on the network." (calm green)
+ * - Chart returns to olive as traffic falls back to calm
+ * - Cover Story glass card gains calm "Resolved" tag in olive
+ * - Plan circles in "III. The Plan" are all ticked
+ * - Refresh Back Issues list
+ */
+function handleResolvedMessage(msg) {
+  isAttackActive = false;
+
+  const attackBtn = document.getElementById('launch-attack-btn');
+  if (attackBtn) attackBtn.disabled = false;
+
+  const statusTextEl = document.getElementById('network-status-text');
+  const statusDotEl = document.getElementById('network-status-dot');
+
+  if (statusTextEl && statusDotEl) {
+    statusTextEl.textContent = 'Threat blocked. All quiet on the network.';
+    statusTextEl.classList.remove('status-disconnected');
+    statusDotEl.classList.remove('disconnected');
+  }
+
+  // Return Chart to calm olive
+  if (trafficChart) {
+    trafficChart.data.datasets[0].borderColor = '#6B705C';
+    trafficChart.data.datasets[0].backgroundColor = 'rgba(107, 112, 92, 0.12)';
+    trafficChart.data.datasets[0].pointHoverBackgroundColor = '#6B705C';
+    trafficChart.update('none');
+  }
+
+  // Cover Story gains calm "Resolved" tag in olive
+  const resolvedTag = document.getElementById('cover-story-resolved-tag');
+  if (resolvedTag) {
+    resolvedTag.style.display = 'inline-block';
+  }
+
+  // Ensure all plan step indicators are ticked
+  document.querySelectorAll('.plan-step-indicator').forEach(el => {
+    el.classList.add('completed');
+  });
+
+  // Refresh back issues list
+  loadBackIssues();
+}
+
+/**
+ * Handle reset event (Stage 6):
+ * - Clear Cover Story, Recognition, Probability, Plan, and Report back to placeholders
+ * - Enable Launch Attack button
+ * - Set status line to "All quiet on the network."
+ * - Return chart to calm olive
+ * - Refresh Back Issues list
+ */
+function handleResetMessage(msg) {
+  isAttackActive = false;
+
+  const attackBtn = document.getElementById('launch-attack-btn');
+  if (attackBtn) attackBtn.disabled = false;
+
+  const statusTextEl = document.getElementById('network-status-text');
+  const statusDotEl = document.getElementById('network-status-dot');
+  if (statusTextEl && statusDotEl) {
+    statusTextEl.textContent = 'All quiet on the network.';
+    statusTextEl.classList.remove('status-disconnected');
+    statusDotEl.classList.remove('disconnected');
+  }
+
+  if (trafficChart) {
+    trafficChart.data.datasets[0].borderColor = '#6B705C';
+    trafficChart.data.datasets[0].backgroundColor = 'rgba(107, 112, 92, 0.12)';
+    trafficChart.data.datasets[0].pointHoverBackgroundColor = '#6B705C';
+    trafficChart.update('none');
+  }
+
+  // Reset Cover Story
+  const coverHeadline = document.getElementById('cover-story-headline');
+  if (coverHeadline) coverHeadline.classList.remove('active');
+  const resolvedTag = document.getElementById('cover-story-resolved-tag');
+  if (resolvedTag) resolvedTag.style.display = 'none';
+  const coverBody = document.getElementById('cover-story-body');
+  if (coverBody) {
+    coverBody.innerHTML = `
+      <p class="placeholder-copy">
+        A gentle anomaly emerged along the northern perimeter relay at twilight. Correlated via heuristic analysis, quarantined before the estate bells tolled. Full incident log reserved for active dispatch.
+      </p>
+    `;
+  }
+
+  // Reset Recognition
+  const recognitionBody = document.getElementById('recognition-body');
+  if (recognitionBody) {
+    recognitionBody.innerHTML = `
+      <p>Signature classification distinguishes mundane automated probes from tailored intrusions targeting private infrastructure.</p>
+    `;
+  }
+
+  // Reset Probability & Plan
+  resetProbabilityColumn();
+  resetPlanColumn();
+
+  // Reset Incident Report
+  const reportHeadline = document.getElementById('incident-report-headline');
+  if (reportHeadline) reportHeadline.innerHTML = 'Incident Report';
+  const modelTag = document.getElementById('incident-report-model-tag');
+  if (modelTag) modelTag.style.display = 'none';
+  const reportTs = document.getElementById('incident-report-timestamp');
+  if (reportTs) reportTs.textContent = '';
+  const reportBody = document.getElementById('incident-report-body');
+  if (reportBody) {
+    reportBody.innerHTML = `
+      <p>
+        <span class="drop-cap">A</span>t three minutes past midnight, beneath an overcast autumn sky, the gateway telemetry recorded an unannounced sequence of syn-flood packets originating from a distributed residential cluster. The intrusion was calculated to mimic casual browsing, yet the cadence betrayed synthetic coordination.
+      </p>
+      <p>
+        Within eleven milliseconds, the heuristic engine engaged silent diversion protocols. Rather than escalating audible alerts or disrupting ongoing media streams within the main villa, the ingress route was gently shifted to an ephemeral virtual sandbox. The attacker perceived success; the estate remained tranquil.
+      </p>
+    `;
+  }
+  const pullquote = document.getElementById('incident-report-pullquote');
+  if (pullquote) {
+    pullquote.textContent = '“In the silence of the estate, true defense is invisible, anticipating the whisper before the storm.”';
+  }
+  const pullquoteWrap = document.getElementById('incident-report-pullquote-wrap');
+  if (pullquoteWrap) pullquoteWrap.classList.remove('editorial-hairlines');
+
+  loadBackIssues();
+}
+
