@@ -2,11 +2,13 @@
  * The Agency — Boutique Cybersecurity Agency Dashboard
  * Client-side script:
  * - Date formatting & agent profile loading
- * - Accordion interactions
+ * - Accordion interactions & Back Issues
  * - WebSocket client with auto-reconnect (2s backing off to 10s)
- * - Real-time Chart.js line chart with dynamic color shifting (olive -> terracotta on attack)
- * - Attack simulation trigger (/api/attack)
- * - Live incident detection, Cover Story activation & Recognition proof trace streaming
+ * - Real-time Chart.js line chart with dynamic color shifting
+ * - Attack simulation trigger (/api/attack) with selectable vectors
+ * - Case File dossier: WHEN, WHERE (SVG World Map), HOW (Timeline)
+ * - Network Topology SVG with BFS vs A* AI route tracing & speedup metrics
+ * - Real-time Watchlist table with interactive map highlighting
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAutoDemoSwitch();
   initReconnectListeners();
   loadBackIssues();
+  loadWatchlist();
 });
 
 /**
@@ -55,17 +58,11 @@ function initLiveDates() {
   const formattedLong = longFormatter.format(now);
   const formattedShort = shortFormatter.format(now);
 
-  // Update login top strip date if present
   const loginDateEl = document.getElementById('today-date-login');
-  if (loginDateEl) {
-    loginDateEl.textContent = formattedShort;
-  }
+  if (loginDateEl) loginDateEl.textContent = formattedShort;
 
-  // Update dashboard hero date if present
   const dashboardHeroDateEl = document.getElementById('today-date-dashboard');
-  if (dashboardHeroDateEl) {
-    dashboardHeroDateEl.textContent = formattedLong;
-  }
+  if (dashboardHeroDateEl) dashboardHeroDateEl.textContent = formattedLong;
 }
 
 /**
@@ -79,9 +76,7 @@ async function initDashboardProfile() {
 
   try {
     const res = await fetch('/api/me', {
-      headers: {
-        'Accept': 'application/json'
-      }
+      headers: { 'Accept': 'application/json' }
     });
 
     if (res.status === 401) {
@@ -120,7 +115,7 @@ function initAccordions() {
   const accordionButtons = document.querySelectorAll('.accordion-trigger');
 
   accordionButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.onclick = () => {
       const isExpanded = btn.getAttribute('aria-expanded') === 'true';
       const targetId = btn.getAttribute('aria-controls');
       const targetContent = document.getElementById(targetId);
@@ -134,34 +129,39 @@ function initAccordions() {
         btn.setAttribute('aria-expanded', 'true');
         targetContent.classList.add('is-open');
       }
-    });
+    };
   });
 }
 
 /**
  * ============================================================================
- * STAGE 3: Attack Trigger Handler (/api/attack)
+ * Attack Trigger & Demo Reset Handlers
  * ============================================================================
  */
 
 function initAttackButton() {
   const attackBtn = document.getElementById('launch-attack-btn');
+  const typeSelect = document.getElementById('attack-type-select');
   if (!attackBtn) return;
 
   attackBtn.addEventListener('click', async () => {
     if (attackBtn.disabled) return;
     attackBtn.disabled = true;
 
+    const selectedType = typeSelect ? typeSelect.value : 'random';
+
     try {
       const res = await fetch('/api/attack', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Accept': 'application/json'
-        }
+        },
+        body: JSON.stringify({ type: selectedType })
       });
 
       if (res.status === 409) {
-        // Attack already in progress; keep button disabled
+        // Attack already in progress
         attackBtn.disabled = true;
       } else if (!res.ok) {
         attackBtn.disabled = false;
@@ -183,9 +183,7 @@ function initResetButton() {
     try {
       await fetch('/api/reset', {
         method: 'POST',
-        headers: {
-          'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
       });
     } catch (_) {
       // Quiet recovery
@@ -277,7 +275,7 @@ async function loadBackIssues() {
 
       return `
         <li class="accordion-item" id="issue-${inc.id}">
-          <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-${inc.id}-content">
+          <button class="accordion-trigger" aria-expanded="false" aria-controls="issue-${inc.id}-content" data-incident-id="${inc.id}">
             <div class="accordion-left">
               <span class="accordion-num">${num}</span>
               <span class="accordion-heading">${escapeHtml(inc.attack_type || 'Incident')} from ${escapeHtml(inc.src_ip || 'Unknown')}</span>
@@ -293,6 +291,11 @@ async function loadBackIssues() {
             <div class="back-issue-content-wrap">
               ${reportText ? `<p class="back-issue-report-text">${escapeHtml(reportText)}</p>` : '<p class="back-issue-report-text" style="font-style:italic; color:var(--ink-muted);">No editorial report recorded for this incident.</p>'}
               ${planStepsHtml ? `<strong class="tiny-label" style="color:var(--forest); display:block; margin-top:0.75rem;">Defensive Containment Sequence</strong><ol class="back-issue-plan-list">${planStepsHtml}</ol>` : ''}
+              <div style="margin-top:1rem;">
+                <button type="button" class="pill-btn pill-btn-outline-dark view-case-file-btn" style="padding:0.35rem 0.85rem; font-size:0.75rem;" data-id="${inc.id}">
+                  Load in Case File →
+                </button>
+              </div>
             </div>
           </div>
         </li>
@@ -300,6 +303,19 @@ async function loadBackIssues() {
     }).join('');
 
     initAccordions();
+
+    // Hook 'Load in Case File' buttons
+    document.querySelectorAll('.view-case-file-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const incId = parseInt(btn.getAttribute('data-id'), 10);
+        const match = incidents.find(i => i.id === incId);
+        if (match) {
+          loadIncidentIntoCaseFile(match);
+        }
+      });
+    });
+
   } catch (_) {
     listEl.innerHTML = '<li class="back-issues-placeholder">Unable to retrieve back issues at this time. Our records remain secure.</li>';
   }
@@ -326,13 +342,6 @@ function initTelemetryWebSocket() {
   connectWebSocket();
 }
 
-/**
- * Initialize Chart.js with nature-retreat styling:
- * - Olive (#6B705C) smooth line by default, shifts to terracotta (#B5654A) during attack
- * - Faint hairlines, DM Sans typography, no legend clutter
- * - Zero animation delay for seamless 1-second live scrolling
- * - Last 60 seconds rolling window
- */
 function setupChart(canvas) {
   if (typeof Chart === 'undefined') {
     setTimeout(() => setupChart(canvas), 200);
@@ -365,9 +374,7 @@ function setupChart(canvas) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: {
-          display: false
-        },
+        legend: { display: false },
         tooltip: {
           backgroundColor: '#1C2A20',
           titleFont: { family: "'DM Sans', -apple-system, sans-serif", size: 11 },
@@ -382,10 +389,7 @@ function setupChart(canvas) {
       },
       scales: {
         x: {
-          grid: {
-            display: false,
-            drawBorder: false
-          },
+          grid: { display: false, drawBorder: false },
           ticks: {
             font: { family: "'DM Sans', -apple-system, sans-serif", size: 11 },
             color: '#8A8A7C',
@@ -397,10 +401,7 @@ function setupChart(canvas) {
           min: 0,
           suggestedMax: 10,
           grace: '15%',
-          grid: {
-            color: 'rgba(38, 38, 31, 0.06)',
-            drawBorder: false
-          },
+          grid: { color: 'rgba(38, 38, 31, 0.06)', drawBorder: false },
           ticks: {
             font: { family: "'DM Sans', -apple-system, sans-serif", size: 11 },
             color: '#8A8A7C',
@@ -412,24 +413,18 @@ function setupChart(canvas) {
   });
 }
 
-/**
- * Establish resilient WebSocket connection
- */
 function connectWebSocket() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
 
-  // Cleanly teardown any prior socket to prevent duplicate connections or listeners
   if (wsInstance) {
     wsInstance.onopen = null;
     wsInstance.onmessage = null;
     wsInstance.onerror = null;
     wsInstance.onclose = null;
-    try {
-      wsInstance.close();
-    } catch (_) {}
+    try { wsInstance.close(); } catch (_) {}
     wsInstance = null;
   }
 
@@ -457,12 +452,10 @@ function connectWebSocket() {
 
   wsInstance.onclose = (event) => {
     updateNetworkStatus(false);
-
     if (event.code === 1008) {
       window.location.href = '/login';
       return;
     }
-
     scheduleReconnect();
   };
 
@@ -471,9 +464,6 @@ function connectWebSocket() {
   };
 }
 
-/**
- * Handle tab wake-up and network restoration without duplicate sockets
- */
 function initReconnectListeners() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -490,12 +480,8 @@ function initReconnectListeners() {
   });
 }
 
-/**
- * Exponential backoff schedule
- */
 function scheduleReconnect() {
   if (reconnectTimer) return;
-
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectWebSocket();
@@ -504,7 +490,7 @@ function scheduleReconnect() {
 }
 
 /**
- * Route incoming messages by type (extensible for Stages 3, 4, 5)
+ * Route incoming messages by type
  */
 function dispatchTelemetryMessage(msg) {
   if (!msg || !msg.type) return;
@@ -522,22 +508,34 @@ function dispatchTelemetryMessage(msg) {
       handleDetection(msg);
       break;
 
-    case 'attack_ended':
-      handleAttackEnded(msg);
+    case 'route':
+      handleRouteMessage(msg);
       break;
 
     case 'bayes':
       handleBayesMessage(msg);
       break;
+
     case 'plan':
       handlePlanMessage(msg);
       break;
+
     case 'report':
       handleReportMessage(msg);
       break;
+
     case 'resolved':
       handleResolvedMessage(msg);
       break;
+
+    case 'attack_ended':
+      handleAttackEnded(msg);
+      break;
+
+    case 'watchlist':
+      handleWatchlistMessage(msg);
+      break;
+
     case 'reset':
       handleResetMessage(msg);
       break;
@@ -547,9 +545,6 @@ function dispatchTelemetryMessage(msg) {
   }
 }
 
-/**
- * Update real-time metrics and Chart.js streaming curve
- */
 function handleTrafficMessage(msg) {
   const ppsEl = document.getElementById('stat-pps');
   const avgSizeEl = document.getElementById('stat-avg-size');
@@ -597,6 +592,12 @@ function resetProbabilityColumn() {
 /**
  * Reset column III (The Plan) back to initial calm state
  */
+let planCircleTimers = [];
+function clearPlanTimers() {
+  planCircleTimers.forEach(t => clearTimeout(t));
+  planCircleTimers = [];
+}
+
 function resetPlanColumn() {
   clearPlanTimers();
   const planBody = document.getElementById('plan-body');
@@ -607,13 +608,6 @@ function resetPlanColumn() {
   }
 }
 
-/**
- * Handle attack_started event:
- * - Update status line to "A disturbance at the gate..." in terracotta
- * - Shift chart line color to terracotta
- * - Disable Launch Attack button
- * - Reset Probability and Plan columns for upcoming analysis
- */
 function handleAttackStarted(msg) {
   isAttackActive = true;
   resetProbabilityColumn();
@@ -631,39 +625,89 @@ function handleAttackStarted(msg) {
     statusDotEl.classList.add('disconnected');
   }
 
-  // Shift Chart to terracotta
   if (trafficChart) {
     trafficChart.data.datasets[0].borderColor = '#B5654A';
     trafficChart.data.datasets[0].backgroundColor = 'rgba(181, 101, 74, 0.15)';
     trafficChart.data.datasets[0].pointHoverBackgroundColor = '#B5654A';
     trafficChart.update('none');
   }
+
+  startCaseDurationTimer();
 }
 
 /**
- * Handle detection event:
- * - Cover Story panel comes alive (headline bright, card with attack type, IP, time)
- * - "I. Recognition" column displays: "I know this one: *DDoS*" with 400ms staggered proof trace
+ * ============================================================================
+ * STAGE 8: Case File, Geolocation Map, AI Route & Watchlist Management
+ * ============================================================================
+ */
+
+let caseDurationInterval = null;
+let caseStartTime = null;
+let currentIncidentAttackers = []; // List of attacker profiles in active incident
+let activeSelectedAttackerIp = null;
+
+function startCaseDurationTimer() {
+  if (caseDurationInterval) clearInterval(caseDurationInterval);
+  caseStartTime = Date.now();
+  const durVal = document.getElementById('case-duration');
+  const timerPill = document.getElementById('case-file-timer');
+
+  caseDurationInterval = setInterval(() => {
+    if (!caseStartTime) return;
+    const elapsedSec = ((Date.now() - caseStartTime) / 1000).toFixed(1);
+    if (durVal) durVal.textContent = `${elapsedSec}s`;
+    if (timerPill) timerPill.textContent = `${elapsedSec}s elapsed`;
+  }, 100);
+}
+
+function stopCaseDurationTimer() {
+  if (caseDurationInterval) {
+    clearInterval(caseDurationInterval);
+    caseDurationInterval = null;
+  }
+}
+
+/**
+ * Smooth-scroll to Case File and flash border (respecting prefers-reduced-motion)
+ */
+function scrollAndFlashCaseFile() {
+  const caseFileEl = document.getElementById('case-file-section');
+  const cardEl = document.getElementById('case-file-card');
+  if (!caseFileEl || !cardEl) return;
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  caseFileEl.scrollIntoView({
+    behavior: prefersReduced ? 'auto' : 'smooth',
+    block: 'start'
+  });
+
+  cardEl.classList.remove('flash-border');
+  void cardEl.offsetWidth; // Force CSS reflow to re-trigger animation
+  cardEl.classList.add('flash-border');
+}
+
+/**
+ * Handle detection event
  */
 function handleDetection(msg) {
-  // 1. Cover Story Panel Update
+  // 1. Smooth scroll to Case File & flash border
+  scrollAndFlashCaseFile();
+
+  // 2. Cover Story Panel Update
   const coverHeadline = document.getElementById('cover-story-headline');
   const coverBody = document.getElementById('cover-story-body');
+  if (coverHeadline) coverHeadline.classList.add('active');
 
-  if (coverHeadline) {
-    coverHeadline.classList.add('active');
+  let formattedTime = 'Just now';
+  if (msg.ts) {
+    try {
+      formattedTime = new Date(msg.ts).toLocaleTimeString();
+    } catch (_) {
+      formattedTime = msg.ts;
+    }
   }
 
   if (coverBody) {
-    let formattedTime = 'Just now';
-    if (msg.ts) {
-      try {
-        formattedTime = new Date(msg.ts).toLocaleTimeString();
-      } catch (_) {
-        formattedTime = msg.ts;
-      }
-    }
-
     coverBody.innerHTML = `
       <div class="cover-incident-details">
         <div class="incident-detail-item">
@@ -682,12 +726,11 @@ function handleDetection(msg) {
     `;
   }
 
-  // 2. Column I: Recognition Card Update with Proof Trace
+  // 3. Column I: Recognition Card Update with Proof Trace
   const recognitionBody = document.getElementById('recognition-body');
   if (recognitionBody) {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const traceSteps = msg.proof_trace || [];
-
     const traceItemsHtml = traceSteps.map((step, idx) => {
       const delayMs = prefersReducedMotion ? 0 : idx * 400;
       return `<li class="proof-step" style="animation-delay: ${delayMs}ms;">${escapeHtml(step)}</li>`;
@@ -700,14 +743,244 @@ function handleDetection(msg) {
       </ol>
     `;
   }
+
+  // 4. Case File Dossier Update
+  const caseIdEl = document.getElementById('case-file-id');
+  if (caseIdEl) caseIdEl.textContent = `Incident #${msg.incident_id}`;
+
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-detected';
+    statusChip.textContent = 'Detected';
+  }
+
+  const detectedAtEl = document.getElementById('case-detected-at');
+  if (detectedAtEl) detectedAtEl.textContent = formattedTime;
+
+  const resolvedAtEl = document.getElementById('case-resolved-at');
+  if (resolvedAtEl) resolvedAtEl.textContent = 'Active Investigation';
+
+  const vectorEl = document.getElementById('case-how-vector');
+  if (vectorEl) vectorEl.textContent = msg.attack_type || 'DDoS Flood';
+
+  const ruleEl = document.getElementById('case-how-rule');
+  if (ruleEl) ruleEl.textContent = msg.rule_fired || 'Horn clause fired';
+
+  // Add attacker profile to session case list
+  const attackerProfile = {
+    ip: msg.src_ip,
+    city: msg.origin_city || 'Geneva',
+    country: msg.origin_country || 'Switzerland',
+    flag: msg.flag || '🌐',
+    lat: msg.lat !== undefined ? msg.lat : 46.2044,
+    lon: msg.lon !== undefined ? msg.lon : 6.1432,
+    attack_type: msg.attack_type,
+    incident_id: msg.incident_id,
+  };
+
+  const existingIdx = currentIncidentAttackers.findIndex(a => a.ip === attackerProfile.ip);
+  if (existingIdx >= 0) {
+    currentIncidentAttackers[existingIdx] = attackerProfile;
+  } else {
+    currentIncidentAttackers.push(attackerProfile);
+  }
+
+  activeSelectedAttackerIp = attackerProfile.ip;
+  updateCaseFileAttackerDisplay(attackerProfile);
+  renderBotnetTabs();
+  renderWorldMap();
+
+  // Timeline step 1 active
+  setChronicleStep('step-node-detect', 'active', msg.rule_fired || 'Heuristic logic engine engaged');
 }
 
 /**
- * Handle bayes event (Module 5):
- * - Renders radial SVG gauge with centered percentage
- * - Shows italic verdict: "Probably malicious" (>= 80%) or "Probably benign" (< 80%)
- * - Four step reasoning lines staggered by 500ms
- * - Animates gauge from prior (5%) to posterior (~95%) over 1.5s
+ * Update the WHERE section for an active attacker profile
+ */
+function updateCaseFileAttackerDisplay(attacker) {
+  const flagEl = document.getElementById('case-where-flag');
+  const locEl = document.getElementById('case-where-location');
+  const ipEl = document.getElementById('case-where-ip');
+
+  if (flagEl) flagEl.textContent = attacker.flag || '🌐';
+  if (locEl) locEl.textContent = `${attacker.city}, ${attacker.country}`;
+  if (ipEl) {
+    const latStr = attacker.lat !== undefined ? attacker.lat.toFixed(4) : '0.0000';
+    const lonStr = attacker.lon !== undefined ? attacker.lon.toFixed(4) : '0.0000';
+    ipEl.textContent = `${attacker.ip} • Lat ${latStr}, Lon ${lonStr}`;
+  }
+}
+
+/**
+ * Render Botnet Tabs if there are multiple attackers
+ */
+function renderBotnetTabs() {
+  const tabsStrip = document.getElementById('case-file-tabs-strip');
+  if (!tabsStrip) return;
+
+  if (currentIncidentAttackers.length <= 1) {
+    tabsStrip.style.display = 'none';
+    tabsStrip.innerHTML = '';
+    return;
+  }
+
+  tabsStrip.style.display = 'flex';
+  tabsStrip.innerHTML = '';
+
+  currentIncidentAttackers.forEach(attacker => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `case-tab-btn ${attacker.ip === activeSelectedAttackerIp ? 'active' : ''}`;
+    btn.textContent = `${attacker.flag || '🌐'} ${attacker.city} (${attacker.ip})`;
+    btn.onclick = () => {
+      activeSelectedAttackerIp = attacker.ip;
+      updateCaseFileAttackerDisplay(attacker);
+      renderBotnetTabs();
+      renderWorldMap();
+    };
+    tabsStrip.appendChild(btn);
+  });
+}
+
+/**
+ * Render dynamic glowing dots and arcs on the SVG World Map
+ * Equirectangular formula:
+ * x = (lon + 180) * (800 / 360)
+ * y = (90 - lat) * (400 / 180)
+ * London HQ: lat 51.5074, lon -0.1278 => x = 399.7, y = 85.5
+ */
+function renderWorldMap() {
+  const group = document.getElementById('map-dynamic-attackers');
+  if (!group) return;
+
+  group.innerHTML = '';
+  const londonX = 399.7;
+  const londonY = 85.5;
+
+  currentIncidentAttackers.forEach(attacker => {
+    const lat = attacker.lat || 0;
+    const lon = attacker.lon || 0;
+    const x = (lon + 180) * (800 / 360);
+    const y = (90 - lat) * (400 / 180);
+
+    const isSelected = attacker.ip === activeSelectedAttackerIp;
+
+    // Curved SVG arc to London HQ
+    const cx = (x + londonX) / 2;
+    const cy = Math.min(y, londonY) - (Math.abs(x - londonX) * 0.15 + 25);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x.toFixed(1)} ${y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${londonX} ${londonY}`);
+    path.setAttribute('class', 'attack-arc-path');
+    if (!isSelected && currentIncidentAttackers.length > 1) {
+      path.setAttribute('opacity', '0.45');
+    }
+    group.appendChild(path);
+
+    // Pulsing outer ring
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    ring.setAttribute('cx', x.toFixed(1));
+    ring.setAttribute('cy', y.toFixed(1));
+    ring.setAttribute('r', isSelected ? '14' : '10');
+    ring.setAttribute('class', 'attacker-ring pulse');
+    group.appendChild(ring);
+
+    // Solid core dot
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', x.toFixed(1));
+    dot.setAttribute('cy', y.toFixed(1));
+    dot.setAttribute('r', isSelected ? '6' : '4.5');
+    dot.setAttribute('class', 'attacker-dot');
+    group.appendChild(dot);
+
+    // City label
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', (x + 8).toFixed(1));
+    text.setAttribute('y', (y + 3).toFixed(1));
+    text.setAttribute('class', 'attacker-map-label');
+    text.textContent = `${attacker.city} ${attacker.flag || ''}`;
+    group.appendChild(text);
+  });
+}
+
+/**
+ * Handle AI Search & Route Tracing event
+ */
+function handleRouteMessage(msg) {
+  // 1. Update comparison pill
+  const pill = document.getElementById('ai-search-comparison-pill');
+  if (pill && msg.comparison_text) {
+    pill.textContent = msg.comparison_text;
+    pill.className = 'pill-tag pill-tag-terracotta';
+  }
+
+  // 2. Update search stats
+  const bfsVal = document.getElementById('bfs-explored-val');
+  if (bfsVal && msg.bfs) {
+    bfsVal.textContent = `BFS explored ${msg.bfs.explored_count} nodes`;
+  }
+
+  const astarVal = document.getElementById('astar-explored-val');
+  if (astarVal && msg.astar) {
+    astarVal.textContent = `A* explored ${msg.astar.explored_count} nodes (optimal, cost: ${msg.astar.cost})`;
+  }
+
+  const pathVal = document.getElementById('ai-path-val');
+  if (pathVal && msg.astar && msg.astar.path) {
+    pathVal.textContent = msg.astar.path.join(' → ');
+  }
+
+  // 3. Animate Network Topology SVG
+  animateTopologyPath(msg.astar ? msg.astar.path : []);
+}
+
+function animateTopologyPath(pathNodes) {
+  // Clear previous active nodes & edges
+  document.querySelectorAll('.topo-node .node-circle').forEach(c => c.classList.remove('node-active'));
+  document.querySelectorAll('.topology-edges .edge-line').forEach(e => e.classList.remove('edge-active'));
+
+  const attackerCircle = document.querySelector('#topo-node-attacker .node-circle');
+  if (attackerCircle) attackerCircle.classList.add('node-active');
+
+  const edgeAttacker = document.getElementById('edge-attacker-gateway');
+  if (edgeAttacker) edgeAttacker.classList.add('edge-active');
+
+  const nodeMap = {
+    'Gateway Router': 'topo-node-gateway',
+    'External Firewall': 'topo-node-firewall',
+    'Core Switch': 'topo-node-core',
+    'Web Server': 'topo-node-web',
+    'SSH Bastion': 'topo-node-ssh',
+    'Database Server': 'topo-node-db',
+  };
+
+  const edgeMap = {
+    'Gateway Router->External Firewall': 'edge-gateway-firewall',
+    'External Firewall->Core Switch': 'edge-firewall-core',
+    'Core Switch->Web Server': 'edge-core-web',
+    'Core Switch->SSH Bastion': 'edge-core-ssh',
+    'Core Switch->Database Server': 'edge-core-db',
+  };
+
+  pathNodes.forEach(nodeName => {
+    const id = nodeMap[nodeName];
+    if (id) {
+      const circle = document.querySelector(`#${id} .node-circle`);
+      if (circle) circle.classList.add('node-active');
+    }
+  });
+
+  for (let i = 0; i < pathNodes.length - 1; i++) {
+    const key = `${pathNodes[i]}->${pathNodes[i + 1]}`;
+    const edgeId = edgeMap[key];
+    if (edgeId) {
+      const edge = document.getElementById(edgeId);
+      if (edge) edge.classList.add('edge-active');
+    }
+  }
+}
+
+/**
+ * Handle bayes event (Module 5)
  */
 function handleBayesMessage(msg) {
   const probBody = document.getElementById('probability-body');
@@ -732,8 +1005,6 @@ function handleBayesMessage(msg) {
     return `<li class="bayes-step" style="animation-delay: ${delayMs}ms;">${stepText}</li>`;
   }).join('');
 
-  // 120x120 SVG, radius 48 => circumference ~ 301.6
-  // Prior 5% => initial offset 286.5
   const initialOffset = 301.6 * (1 - (priorPct / 100));
 
   probBody.innerHTML = `
@@ -748,135 +1019,92 @@ function handleBayesMessage(msg) {
       </div>
     </div>
     <p class="bayes-verdict ${isMalicious ? 'malicious' : 'benign'}">
-      Probably <em>${isMalicious ? 'malicious' : 'benign'}</em>
+      <em>${isMalicious ? 'Probably malicious' : 'Probably benign'}</em>
     </p>
-    <ul class="bayes-step-list">
+    <ol class="bayes-steps-list">
       ${stepsHtml}
-    </ul>
-    <div class="bayes-prior-footnote">Naive Bayes, prior ${priorPct}%</div>
+    </ol>
   `;
 
-  animateGauge(priorPct, postPct, isMalicious);
-}
+  // Animate gauge arc from prior to posterior
+  setTimeout(() => {
+    const circle = document.getElementById('gauge-circle');
+    const label = document.getElementById('gauge-percent-display');
+    if (!circle || !label) return;
 
-/**
- * Animate the radial gauge sweep from prior to posterior over 1.5 seconds
- */
-function animateGauge(startPct, endPct, isTerracotta) {
-  const circle = document.getElementById('gauge-circle');
-  const percentText = document.getElementById('gauge-percent-display');
-  if (!circle || !percentText) return;
+    const targetOffset = 301.6 * (1 - (postPct / 100));
+    circle.style.transition = prefersReducedMotion ? 'none' : 'stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1)';
+    circle.style.strokeDashoffset = targetOffset;
+    circle.style.stroke = isMalicious ? '#B5654A' : '#6B705C';
 
-  if (isTerracotta) {
-    circle.classList.add('terracotta');
-  } else {
-    circle.classList.remove('terracotta');
-  }
-
-  const circumference = 301.6;
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  if (prefersReducedMotion) {
-    const finalOffset = circumference * (1 - (endPct / 100));
-    circle.style.strokeDashoffset = finalOffset;
-    percentText.textContent = `${Math.round(endPct)}%`;
-    return;
-  }
-
-  const durationMs = 1500;
-  let startTime = null;
-
-  function step(timestamp) {
-    if (!startTime) startTime = timestamp;
-    const elapsed = timestamp - startTime;
-    const progress = Math.min(elapsed / durationMs, 1.0);
-
-    // Ease-out cubic: 1 - Math.pow(1 - progress, 3)
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const currentPct = startPct + (endPct - startPct) * eased;
-    const currentOffset = circumference * (1 - (currentPct / 100));
-
-    circle.style.strokeDashoffset = currentOffset;
-    percentText.textContent = `${Math.round(currentPct)}%`;
-
-    if (progress < 1.0) {
-      requestAnimationFrame(step);
+    if (prefersReducedMotion) {
+      label.textContent = `${postPct}%`;
     } else {
-      circle.style.strokeDashoffset = circumference * (1 - (endPct / 100));
-      percentText.textContent = `${Math.round(endPct)}%`;
+      let currentVal = priorPct;
+      const stepTime = 1500 / Math.max(1, Math.abs(postPct - priorPct));
+      const counterTimer = setInterval(() => {
+        if (currentVal < postPct) {
+          currentVal++;
+          label.textContent = `${currentVal}%`;
+        } else if (currentVal > postPct) {
+          currentVal--;
+          label.textContent = `${currentVal}%`;
+        } else {
+          clearInterval(counterTimer);
+        }
+      }, stepTime);
     }
+  }, 100);
+
+  // Update Case File status and timeline
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-analyzing';
+    statusChip.textContent = 'Analyzing';
   }
 
-  requestAnimationFrame(step);
+  setChronicleStep('step-node-detect', 'completed');
+  setChronicleStep('step-node-bayes', 'active', `Bayesian posterior assessed: ${postPct}%`);
 }
 
 /**
- * Convert small integer to title-cased English word
- */
-function numberToWord(n) {
-  const words = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
-  return words[n] || String(n);
-}
-
-let planCircleTimers = [];
-
-function clearPlanTimers() {
-  planCircleTimers.forEach(t => clearTimeout(t));
-  planCircleTimers = [];
-}
-
-/**
- * Handle plan event (Module 6):
- * - Displays headline with step count: "Three steps to <em>safety</em>"
- * - Editorial numbered rows fading in 600ms after the previous one
- * - After all steps have appeared, circles fill in olive one by one (every 500ms) with checkmark
- * - Footnote showing states explored
- * - Respects prefers-reduced-motion (shows all immediately)
+ * Handle plan event (Module 6)
  */
 function handlePlanMessage(msg) {
   clearPlanTimers();
-
   const planBody = document.getElementById('plan-body');
   if (!planBody) return;
 
   const steps = msg.steps || [];
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const stepWord = numberToWord(steps.length);
-  const headlineSuffix = steps.length === 1 ? 'step to <em>safety</em>' : 'steps to <em>safety</em>';
-  const headlineHtml = `<p class="plan-headline">${stepWord} ${headlineSuffix}</p>`;
-
   const rowsHtml = steps.map((step, idx) => {
-    const delayMs = prefersReducedMotion ? 0 : idx * 600;
-    const stepNum = step.n !== undefined ? step.n : idx + 1;
+    const delayMs = prefersReducedMotion ? 0 : idx * 400;
     return `
-      <li class="plan-step-row" style="animation-delay: ${delayMs}ms;" data-step-index="${idx}">
-        <span class="plan-step-num">${stepNum}</span>
-        <div class="plan-step-content">
-          <p class="plan-step-desc">${escapeHtml(step.description)}</p>
-        </div>
-        <div class="plan-step-indicator ${prefersReducedMotion ? 'completed' : ''}" id="plan-indicator-${idx}" aria-label="Step completed">
-          <svg class="plan-check-icon" viewBox="0 0 16 16" fill="none">
-            <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+      <li class="plan-step-row" style="animation-delay: ${delayMs}ms;">
+        <span class="plan-step-indicator" id="plan-indicator-${idx}">${step.n}</span>
+        <div class="plan-step-details">
+          <span class="plan-step-text">${escapeHtml(step.description)}</span>
         </div>
       </li>
     `;
   }).join('');
 
-  const statesExplored = msg.states_explored !== undefined ? msg.states_explored : 5;
-  const footnoteHtml = `<div class="plan-footnote">Planned by search over ${statesExplored} possible states.</div>`;
+  const statesExploredText = msg.states_explored !== undefined
+    ? `<span class="plan-states-count">Explored ${msg.states_explored} states in STRIPS search</span>`
+    : '';
 
   planBody.innerHTML = `
-    ${headlineHtml}
-    <ul class="plan-step-list">
+    <ol class="plan-steps-list">
       ${rowsHtml}
-    </ul>
-    ${footnoteHtml}
+    </ol>
+    <div class="plan-footer-wrap">
+      ${statesExploredText}
+    </div>
   `;
 
   if (!prefersReducedMotion && steps.length > 0) {
-    const allRowsAppearedTime = (steps.length - 1) * 600 + 450;
+    const allRowsAppearedTime = steps.length * 400 + 200;
     steps.forEach((_, idx) => {
       const timer = setTimeout(() => {
         const ind = document.getElementById(`plan-indicator-${idx}`);
@@ -885,75 +1113,24 @@ function handlePlanMessage(msg) {
       planCircleTimers.push(timer);
     });
   }
+
+  // Update Case File status and timeline
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-analyzing';
+    statusChip.textContent = 'Defense Planned';
+  }
+
+  setChronicleStep('step-node-bayes', 'completed');
+  setChronicleStep('step-node-plan', 'active', `STRIPS containment sequence synthesized (${steps.length} steps)`);
 }
 
 /**
- * Handle attack_ended event:
- * - Return status line to "All quiet on the network." (green)
- * - Shift chart line color back to olive
- * - Re-enable Launch Attack button
- * - Keep Recognition and Cover Story content visible
- */
-function handleAttackEnded(msg) {
-  isAttackActive = false;
-
-  const attackBtn = document.getElementById('launch-attack-btn');
-  if (attackBtn) attackBtn.disabled = false;
-
-  const statusTextEl = document.getElementById('network-status-text');
-  const statusDotEl = document.getElementById('network-status-dot');
-
-  if (statusTextEl && statusDotEl) {
-    statusTextEl.textContent = 'All quiet on the network.';
-    statusTextEl.classList.remove('status-disconnected');
-    statusDotEl.classList.remove('disconnected');
-  }
-
-  // Shift Chart back to calm olive
-  if (trafficChart) {
-    trafficChart.data.datasets[0].borderColor = '#6B705C';
-    trafficChart.data.datasets[0].backgroundColor = 'rgba(107, 112, 92, 0.12)';
-    trafficChart.data.datasets[0].pointHoverBackgroundColor = '#6B705C';
-    trafficChart.update('none');
-  }
-}
-
-/**
- * Update hero status line and indicator dot based on connection state
- */
-function updateNetworkStatus(isConnected) {
-  if (isAttackActive) return; // Keep attack status while attack is active
-
-  const statusTextEl = document.getElementById('network-status-text');
-  const statusDotEl = document.getElementById('network-status-dot');
-
-  if (!statusTextEl || !statusDotEl) return;
-
-  if (isConnected) {
-    statusTextEl.textContent = 'All quiet on the network.';
-    statusTextEl.classList.remove('status-disconnected');
-    statusDotEl.classList.remove('disconnected');
-  } else {
-    statusTextEl.textContent = 'Reconnecting to the network...';
-    statusTextEl.classList.add('status-disconnected');
-    statusDotEl.classList.add('disconnected');
-  }
-}
-
-/**
- * Handle report event (Module 6 / Stage 6):
- * - Fills the "Incident Report" section as an editorial magazine feature
- * - Headline with serif styling: "The Gate Was <em>Secured</em>"
- * - Tag pill: "Gemini" (olive) or "Template" (terracotta), plus formatted timestamp
- * - Pull quote taken from report's first sentence, framed between hairlines
- * - Paragraphs with drop cap on initial character, fading in one by one
- * - Plain TEXT only (textContent) to prevent injection
+ * Handle report event (Module 6 / Stage 6)
  */
 function handleReportMessage(msg) {
   const headlineEl = document.getElementById('incident-report-headline');
-  if (headlineEl) {
-    headlineEl.innerHTML = 'The Gate Was <em>Secured</em>';
-  }
+  if (headlineEl) headlineEl.innerHTML = 'The Gate Was <em>Secured</em>';
 
   const modelTagEl = document.getElementById('incident-report-model-tag');
   if (modelTagEl) {
@@ -1001,39 +1178,33 @@ function handleReportMessage(msg) {
   const pullquoteWrap = document.getElementById('incident-report-pullquote-wrap');
   if (pullquoteEl && msg.body) {
     const firstSentence = msg.body.split(/[.!?]/)[0].trim();
-    if (firstSentence) {
-      pullquoteEl.textContent = `“${firstSentence}.”`;
-    }
-    if (pullquoteWrap) {
-      pullquoteWrap.classList.add('editorial-hairlines');
-    }
+    if (firstSentence) pullquoteEl.textContent = `“${firstSentence}.”`;
+    if (pullquoteWrap) pullquoteWrap.classList.add('editorial-hairlines');
   }
+
+  // Update Case File timeline
+  setChronicleStep('step-node-plan', 'completed');
+  setChronicleStep('step-node-report', 'active', `Concierge dispatch compiled via ${msg.generated_by || 'editorial concierge'}`);
 }
 
 /**
- * Handle resolved event (Stage 6):
- * - Status line: "Threat blocked. All quiet on the network." (calm green)
- * - Chart returns to olive as traffic falls back to calm
- * - Cover Story glass card gains calm "Resolved" tag in olive
- * - Plan circles in "III. The Plan" are all ticked
- * - Refresh Back Issues list
+ * Handle resolved event
  */
 function handleResolvedMessage(msg) {
   isAttackActive = false;
+  stopCaseDurationTimer();
 
   const attackBtn = document.getElementById('launch-attack-btn');
   if (attackBtn) attackBtn.disabled = false;
 
   const statusTextEl = document.getElementById('network-status-text');
   const statusDotEl = document.getElementById('network-status-dot');
-
   if (statusTextEl && statusDotEl) {
     statusTextEl.textContent = 'Threat blocked. All quiet on the network.';
     statusTextEl.classList.remove('status-disconnected');
     statusDotEl.classList.remove('disconnected');
   }
 
-  // Return Chart to calm olive
   if (trafficChart) {
     trafficChart.data.datasets[0].borderColor = '#6B705C';
     trafficChart.data.datasets[0].backgroundColor = 'rgba(107, 112, 92, 0.12)';
@@ -1041,31 +1212,260 @@ function handleResolvedMessage(msg) {
     trafficChart.update('none');
   }
 
-  // Cover Story gains calm "Resolved" tag in olive
   const resolvedTag = document.getElementById('cover-story-resolved-tag');
-  if (resolvedTag) {
-    resolvedTag.style.display = 'inline-block';
+  if (resolvedTag) resolvedTag.style.display = 'inline-block';
+
+  document.querySelectorAll('.plan-step-indicator').forEach(el => el.classList.add('completed'));
+
+  // Update Case File
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-resolved';
+    statusChip.textContent = 'Resolved';
   }
 
-  // Ensure all plan step indicators are ticked
-  document.querySelectorAll('.plan-step-indicator').forEach(el => {
-    el.classList.add('completed');
-  });
+  const resolvedAtEl = document.getElementById('case-resolved-at');
+  if (resolvedAtEl) {
+    const now = new Date();
+    resolvedAtEl.textContent = now.toLocaleTimeString();
+  }
 
-  // Refresh back issues list
+  setChronicleStep('step-node-report', 'completed');
+  setChronicleStep('step-node-resolve', 'completed', 'Threat blocked • Sanctuary restored');
+
   loadBackIssues();
+  loadWatchlist();
+}
+
+function handleAttackEnded(msg) {
+  isAttackActive = false;
+  stopCaseDurationTimer();
+
+  const attackBtn = document.getElementById('launch-attack-btn');
+  if (attackBtn) attackBtn.disabled = false;
+
+  const statusTextEl = document.getElementById('network-status-text');
+  const statusDotEl = document.getElementById('network-status-dot');
+  if (statusTextEl && statusDotEl) {
+    statusTextEl.textContent = 'All quiet on the network.';
+    statusTextEl.classList.remove('status-disconnected');
+    statusDotEl.classList.remove('disconnected');
+  }
+
+  if (trafficChart) {
+    trafficChart.data.datasets[0].borderColor = '#6B705C';
+    trafficChart.data.datasets[0].backgroundColor = 'rgba(107, 112, 92, 0.12)';
+    trafficChart.data.datasets[0].pointHoverBackgroundColor = '#6B705C';
+    trafficChart.update('none');
+  }
+}
+
+function updateNetworkStatus(isConnected) {
+  if (isAttackActive) return;
+
+  const statusTextEl = document.getElementById('network-status-text');
+  const statusDotEl = document.getElementById('network-status-dot');
+  if (!statusTextEl || !statusDotEl) return;
+
+  if (isConnected) {
+    statusTextEl.textContent = 'All quiet on the network.';
+    statusTextEl.classList.remove('status-disconnected');
+    statusDotEl.classList.remove('disconnected');
+  } else {
+    statusTextEl.textContent = 'Reconnecting to the network...';
+    statusTextEl.classList.add('status-disconnected');
+    statusDotEl.classList.add('disconnected');
+  }
 }
 
 /**
- * Handle reset event (Stage 6):
- * - Clear Cover Story, Recognition, Probability, Plan, and Report back to placeholders
- * - Enable Launch Attack button
- * - Set status line to "All quiet on the network."
- * - Return chart to calm olive
- * - Refresh Back Issues list
+ * Update vertical chronicle step visual states
+ */
+function setChronicleStep(stepId, state, descText) {
+  const step = document.getElementById(stepId);
+  if (!step) return;
+
+  step.classList.remove('step-pending', 'step-active', 'step-completed');
+  if (state === 'active') {
+    step.classList.add('step-active');
+  } else if (state === 'completed') {
+    step.classList.add('step-completed');
+  } else {
+    step.classList.add('step-pending');
+  }
+
+  if (descText) {
+    const desc = step.querySelector('.step-desc');
+    if (desc) desc.textContent = descText;
+  }
+}
+
+function resetChronicleSteps() {
+  ['step-node-detect', 'step-node-bayes', 'step-node-plan', 'step-node-report', 'step-node-resolve'].forEach(id => {
+    setChronicleStep(id, 'pending');
+  });
+}
+
+/**
+ * Watchlist rendering & fetching
+ */
+async function loadWatchlist() {
+  try {
+    const res = await fetch('/api/watchlist', {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (res.ok) {
+      const list = await res.json();
+      renderWatchlistTable(list);
+    }
+  } catch (_) {}
+}
+
+function handleWatchlistMessage(msg) {
+  if (msg && Array.isArray(msg.watchlist)) {
+    renderWatchlistTable(msg.watchlist);
+  }
+}
+
+function renderWatchlistTable(rows) {
+  const tbody = document.getElementById('watchlist-table-body');
+  const badge = document.getElementById('watchlist-count-badge');
+  if (!tbody) return;
+
+  if (badge) {
+    badge.textContent = `${rows.length} Monitored ${rows.length === 1 ? 'Entry' : 'Entries'}`;
+  }
+
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = `
+      <tr class="watchlist-empty-row">
+        <td colspan="6" class="empty-state-cell">No intrusion signatures logged in current surveillance cycle.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  rows.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-ip', item.ip);
+
+    // IP cell
+    const tdIp = document.createElement('td');
+    const spanIp = document.createElement('span');
+    spanIp.className = 'ip-mono';
+    spanIp.textContent = item.ip;
+    tdIp.appendChild(spanIp);
+    tr.appendChild(tdIp);
+
+    // Origin cell
+    const tdOrigin = document.createElement('td');
+    tdOrigin.textContent = `${item.flag || '🌐'} ${item.city}, ${item.country}`;
+    tr.appendChild(tdOrigin);
+
+    // Vector cell
+    const tdVector = document.createElement('td');
+    tdVector.textContent = item.attack_type || 'DDoS';
+    tr.appendChild(tdVector);
+
+    // Prob cell
+    const tdProb = document.createElement('td');
+    const probPct = Math.round((item.probability !== undefined ? item.probability : 0.05) * 100);
+    const spanProb = document.createElement('span');
+    spanProb.className = `pill-tag ${probPct >= 80 ? 'pill-tag-terracotta' : 'pill-tag-olive'}`;
+    spanProb.textContent = `${probPct}%`;
+    tdProb.appendChild(spanProb);
+    tr.appendChild(tdProb);
+
+    // Packets cell
+    const tdPkts = document.createElement('td');
+    tdPkts.textContent = String(item.packets || 0);
+    tr.appendChild(tdPkts);
+
+    // Status cell
+    const tdStatus = document.createElement('td');
+    const spanStatus = document.createElement('span');
+    const statusLower = (item.status || 'monitored').toLowerCase();
+    let chipClass = 'chip-detected';
+    if (statusLower.includes('block') || statusLower.includes('neutral')) chipClass = 'chip-resolved';
+    else if (statusLower.includes('analyz')) chipClass = 'chip-analyzing';
+    spanStatus.className = `status-chip ${chipClass}`;
+    spanStatus.textContent = item.status || 'Monitored';
+    tdStatus.appendChild(spanStatus);
+    tr.appendChild(tdStatus);
+
+    // Click on watchlist row highlights attacker on map and scrolls to Case File
+    tr.addEventListener('click', () => {
+      document.querySelectorAll('#watchlist-table-body tr').forEach(r => r.classList.remove('row-selected'));
+      tr.classList.add('row-selected');
+      activeSelectedAttackerIp = item.ip;
+      updateCaseFileAttackerDisplay(item);
+      renderWorldMap();
+      scrollAndFlashCaseFile();
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+/**
+ * Load back issue into active Case File
+ */
+function loadIncidentIntoCaseFile(inc) {
+  const caseIdEl = document.getElementById('case-file-id');
+  if (caseIdEl) caseIdEl.textContent = `Incident #${inc.id}`;
+
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-resolved';
+    statusChip.textContent = inc.status || 'Resolved';
+  }
+
+  let formattedTime = 'Past cycle';
+  if (inc.ts) {
+    try { formattedTime = new Date(inc.ts).toLocaleTimeString(); } catch (_) {}
+  }
+  const detectedAtEl = document.getElementById('case-detected-at');
+  if (detectedAtEl) detectedAtEl.textContent = formattedTime;
+
+  const resolvedAtEl = document.getElementById('case-resolved-at');
+  if (resolvedAtEl) resolvedAtEl.textContent = inc.blocked_at ? new Date(inc.blocked_at).toLocaleTimeString() : 'Resolved';
+
+  const vectorEl = document.getElementById('case-how-vector');
+  if (vectorEl) vectorEl.textContent = inc.attack_type || 'DDoS';
+
+  const attacker = {
+    ip: inc.src_ip,
+    city: inc.origin_city || 'Geneva',
+    country: inc.origin_country || 'Switzerland',
+    flag: '🌐',
+    lat: 46.2044,
+    lon: 6.1432,
+    attack_type: inc.attack_type,
+    incident_id: inc.id,
+  };
+
+  currentIncidentAttackers = [attacker];
+  activeSelectedAttackerIp = attacker.ip;
+  updateCaseFileAttackerDisplay(attacker);
+  renderBotnetTabs();
+  renderWorldMap();
+
+  if (inc.route) {
+    handleRouteMessage(inc.route);
+  }
+
+  scrollAndFlashCaseFile();
+}
+
+/**
+ * Handle reset event
  */
 function handleResetMessage(msg) {
   isAttackActive = false;
+  stopCaseDurationTimer();
+  currentIncidentAttackers = [];
+  activeSelectedAttackerIp = null;
 
   const attackBtn = document.getElementById('launch-attack-btn');
   if (attackBtn) attackBtn.disabled = false;
@@ -1099,17 +1499,78 @@ function handleResetMessage(msg) {
     `;
   }
 
-  // Reset Recognition
+  // Reset Recognition, Probability & Plan
   const recognitionBody = document.getElementById('recognition-body');
   if (recognitionBody) {
     recognitionBody.innerHTML = `
       <p>Signature classification distinguishes mundane automated probes from tailored intrusions targeting private infrastructure.</p>
     `;
   }
-
-  // Reset Probability & Plan
   resetProbabilityColumn();
   resetPlanColumn();
+
+  // Reset Case File
+  const caseIdEl = document.getElementById('case-file-id');
+  if (caseIdEl) caseIdEl.textContent = 'Incident #--';
+
+  const statusChip = document.getElementById('case-file-status-chip');
+  if (statusChip) {
+    statusChip.className = 'status-chip chip-detected';
+    statusChip.textContent = 'Awaiting Intrusion';
+  }
+
+  const timerPill = document.getElementById('case-file-timer');
+  if (timerPill) timerPill.textContent = '0.0s elapsed';
+
+  const detectedAtEl = document.getElementById('case-detected-at');
+  if (detectedAtEl) detectedAtEl.textContent = '—';
+
+  const durVal = document.getElementById('case-duration');
+  if (durVal) durVal.textContent = '0.0s';
+
+  const resolvedAtEl = document.getElementById('case-resolved-at');
+  if (resolvedAtEl) resolvedAtEl.textContent = 'Pending';
+
+  const flagEl = document.getElementById('case-where-flag');
+  if (flagEl) flagEl.textContent = '🌐';
+
+  const locEl = document.getElementById('case-where-location');
+  if (locEl) locEl.textContent = 'Awaiting coordinate fix';
+
+  const ipEl = document.getElementById('case-where-ip');
+  if (ipEl) ipEl.textContent = '0.0.0.0 • Lat 0.0000, Lon 0.0000';
+
+  const vectorEl = document.getElementById('case-how-vector');
+  if (vectorEl) vectorEl.textContent = 'DDoS Flood';
+
+  const ruleEl = document.getElementById('case-how-rule');
+  if (ruleEl) ruleEl.textContent = 'Awaiting Horn clause';
+
+  const mapGroup = document.getElementById('map-dynamic-attackers');
+  if (mapGroup) mapGroup.innerHTML = '';
+
+  const tabsStrip = document.getElementById('case-file-tabs-strip');
+  if (tabsStrip) {
+    tabsStrip.style.display = 'none';
+    tabsStrip.innerHTML = '';
+  }
+
+  resetChronicleSteps();
+
+  // Reset Topology Map
+  document.querySelectorAll('.topo-node .node-circle').forEach(c => c.classList.remove('node-active'));
+  document.querySelectorAll('.topology-edges .edge-line').forEach(e => e.classList.remove('edge-active'));
+  const pill = document.getElementById('ai-search-comparison-pill');
+  if (pill) {
+    pill.textContent = 'AI Search: Standby';
+    pill.className = 'pill-tag pill-tag-forest';
+  }
+  const bfsVal = document.getElementById('bfs-explored-val');
+  if (bfsVal) bfsVal.textContent = 'Standby (0 nodes)';
+  const astarVal = document.getElementById('astar-explored-val');
+  if (astarVal) astarVal.textContent = 'Standby (0 nodes)';
+  const pathVal = document.getElementById('ai-path-val');
+  if (pathVal) pathVal.textContent = '—';
 
   // Reset Incident Report
   const reportHeadline = document.getElementById('incident-report-headline');
@@ -1137,5 +1598,5 @@ function handleResetMessage(msg) {
   if (pullquoteWrap) pullquoteWrap.classList.remove('editorial-hairlines');
 
   loadBackIssues();
+  renderWatchlistTable([]);
 }
-

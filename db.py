@@ -2,7 +2,7 @@
 Database management for the Boutique Cybersecurity Agency Dashboard.
 
 Uses the Python standard library's sqlite3 module with parameterized queries,
-bcrypt password hashing, and automatic schema initialization and seeding.
+bcrypt password hashing, and automatic schema initialization, migration and seeding.
 """
 
 import json
@@ -54,10 +54,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def init_db(db_path: Optional[str] = None) -> None:
     """
-    Initialize all database tables automatically on first run and
-    seed the initial default user ('agent001') if not already present.
+    Initialize all database tables automatically on first run,
+    apply schema migrations, and seed the initial default user ('agent001') if not present.
     If the database file is corrupted or unreadable, safely re-creates it.
-    Prints credentials to the console on first run only.
     """
     path = db_path or os.getenv("AGENCY_DB_PATH", "agency.db")
     if path != ":memory:" and os.path.exists(path) and os.path.getsize(path) > 0:
@@ -90,7 +89,7 @@ def init_db(db_path: Optional[str] = None) -> None:
                 );
             """)
 
-            # 2. incidents table
+            # 2. incidents table (with Stage 8 extensions)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS incidents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,9 +98,26 @@ def init_db(db_path: Optional[str] = None) -> None:
                     src_ip TEXT NOT NULL,
                     probability REAL NOT NULL,
                     status TEXT NOT NULL,
-                    plan_json TEXT
+                    plan_json TEXT,
+                    origin_city TEXT,
+                    origin_country TEXT,
+                    detected_at TEXT,
+                    blocked_at TEXT,
+                    route_json TEXT
                 );
             """)
+
+            # Check and apply migrations for older database files if columns are missing
+            existing_cols = {row["name"] for row in cursor.execute("PRAGMA table_info(incidents)").fetchall()}
+            for col, col_type in [
+                ("origin_city", "TEXT"),
+                ("origin_country", "TEXT"),
+                ("detected_at", "TEXT"),
+                ("blocked_at", "TEXT"),
+                ("route_json", "TEXT"),
+            ]:
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE incidents ADD COLUMN {col} {col_type};")
 
             # 3. reports table
             cursor.execute("""
@@ -175,6 +191,11 @@ def create_incident(
     status: str = "detected",
     probability: float = 1.0,
     plan_json: Optional[str] = None,
+    origin_city: Optional[str] = None,
+    origin_country: Optional[str] = None,
+    detected_at: Optional[str] = None,
+    blocked_at: Optional[str] = None,
+    route_json: Optional[str] = None,
     db_path: Optional[str] = None
 ) -> int:
     """
@@ -182,16 +203,23 @@ def create_incident(
     Returns the newly inserted incident ID.
     """
     now_ts = ts or datetime.now(timezone.utc).isoformat()
+    det_at = detected_at or now_ts
     conn = get_connection(db_path)
     try:
         with conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO incidents (ts, attack_type, src_ip, probability, status, plan_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO incidents (
+                    ts, attack_type, src_ip, probability, status, plan_json,
+                    origin_city, origin_country, detected_at, blocked_at, route_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (now_ts, attack_type, src_ip, probability, status, plan_json)
+                (
+                    now_ts, attack_type, src_ip, probability, status, plan_json,
+                    origin_city, origin_country, det_at, blocked_at, route_json
+                )
             )
             return cursor.lastrowid
     finally:
@@ -203,10 +231,15 @@ def update_incident(
     status: Optional[str] = None,
     probability: Optional[float] = None,
     plan_json: Optional[str] = None,
+    origin_city: Optional[str] = None,
+    origin_country: Optional[str] = None,
+    detected_at: Optional[str] = None,
+    blocked_at: Optional[str] = None,
+    route_json: Optional[str] = None,
     db_path: Optional[str] = None
 ) -> bool:
     """
-    Update status, probability, or plan_json of an existing incident using parameterized queries.
+    Update fields of an existing incident using parameterized queries.
     Returns True if an incident row was modified, False otherwise.
     """
     updates = []
@@ -221,6 +254,21 @@ def update_incident(
     if plan_json is not None:
         updates.append("plan_json = ?")
         params.append(plan_json)
+    if origin_city is not None:
+        updates.append("origin_city = ?")
+        params.append(origin_city)
+    if origin_country is not None:
+        updates.append("origin_country = ?")
+        params.append(origin_country)
+    if detected_at is not None:
+        updates.append("detected_at = ?")
+        params.append(detected_at)
+    if blocked_at is not None:
+        updates.append("blocked_at = ?")
+        params.append(blocked_at)
+    if route_json is not None:
+        updates.append("route_json = ?")
+        params.append(route_json)
 
     if not updates:
         return False
@@ -235,6 +283,41 @@ def update_incident(
                 tuple(params)
             )
             return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_incident(incident_id: int, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Fetch single incident by ID including its latest report."""
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        inc = dict(row)
+        plan_obj = None
+        if inc.get("plan_json"):
+            try:
+                plan_obj = json.loads(inc["plan_json"])
+            except Exception:
+                pass
+        route_obj = None
+        if inc.get("route_json"):
+            try:
+                route_obj = json.loads(inc["route_json"])
+            except Exception:
+                pass
+
+        cursor.execute("SELECT * FROM reports WHERE incident_id = ? ORDER BY id DESC LIMIT 1", (incident_id,))
+        rep_row = cursor.fetchone()
+        report_dict = dict(rep_row) if rep_row else None
+
+        inc["plan"] = plan_obj
+        inc["route"] = route_obj
+        inc["report"] = report_dict
+        return inc
     finally:
         conn.close()
 
@@ -274,24 +357,15 @@ def list_incidents_with_reports(
 ) -> List[Dict[str, Any]]:
     """
     List newest incidents with associated reports (limit default 20), newest first.
-    Returns list of dicts:
-    {
-        "id": int,
-        "ts": str,
-        "attack_type": str,
-        "src_ip": str,
-        "probability": float,
-        "status": str,
-        "plan": dict or None (parsed from plan_json),
-        "report": {"body": str, "generated_by": str, "ts": str} or None
-    }
+    Returns list of dicts with all Stage 8 columns included.
     """
     conn = get_connection(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT id, ts, attack_type, src_ip, probability, status, plan_json
+            SELECT id, ts, attack_type, src_ip, probability, status, plan_json,
+                   origin_city, origin_country, detected_at, blocked_at, route_json
             FROM incidents
             ORDER BY id DESC
             LIMIT ?
@@ -311,6 +385,13 @@ def list_incidents_with_reports(
                     plan_obj = json.loads(inc_dict["plan_json"])
                 except Exception:
                     plan_obj = None
+
+            route_obj = None
+            if inc_dict.get("route_json"):
+                try:
+                    route_obj = json.loads(inc_dict["route_json"])
+                except Exception:
+                    route_obj = None
 
             cursor.execute(
                 """
@@ -339,7 +420,12 @@ def list_incidents_with_reports(
                 "src_ip": inc_dict["src_ip"],
                 "probability": inc_dict["probability"],
                 "status": inc_dict["status"],
+                "origin_city": inc_dict.get("origin_city"),
+                "origin_country": inc_dict.get("origin_country"),
+                "detected_at": inc_dict.get("detected_at"),
+                "blocked_at": inc_dict.get("blocked_at"),
                 "plan": plan_obj,
+                "route": route_obj,
                 "report": report_dict
             })
 
@@ -350,5 +436,3 @@ def list_incidents_with_reports(
 
 if __name__ == "__main__":
     init_db()
-
-

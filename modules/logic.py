@@ -3,7 +3,7 @@ Module 4: Logic Engine (Forward-Chaining Knowledge Base)
 Pure functions, zero I/O.
 
 Derives facts from packet telemetry and applies Horn-clause rules to infer
-cybersecurity incidents (DDoS, Port Scan, Brute Force) with an explainable
+cybersecurity incidents (DDoS, Botnet, Port Scan, Brute Force) with an explainable
 plain-English proof trace.
 """
 
@@ -13,11 +13,29 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
+# Configurable detection thresholds stored as module-level constants
+SYN_RATE_THRESHOLD = 10         # > 10 SYN/sec constitutes high SYN rate (10 does not trigger, 12+ triggers)
+SSH_ATTEMPTS_THRESHOLD = 10     # > 10 attempts to port 22 in 5s
+DISTINCT_PORTS_THRESHOLD = 8    # > 8 distinct ports in 5s
+BOTNET_IP_COUNT_THRESHOLD = 2   # >= 2 distributed IPs attacking simultaneously
+
+
 # ============================================================================
-# Step 2: Knowledge Base Rules (Horn Clauses Stored as Data)
+# Knowledge Base Rules (Horn Clauses Stored as Data)
 # ============================================================================
 
 RULES = [
+    {
+        "name": "botnet_detection",
+        "premises": [
+            ("high_syn_rate", "?X"),
+            ("botnet_participant", "?X"),
+        ],
+        "conclusion": ("botnet", "?X"),
+        "attack_type": "botnet",
+        "rule_text": "Rule: high SYN rate + distributed multi-source coordination => botnet",
+        "conclusion_template": "Conclusion: {X} is participating in a botnet attack",
+    },
     {
         "name": "ddos_detection",
         "premises": [
@@ -48,6 +66,15 @@ RULES = [
         "attack_type": "brute_force",
         "rule_text": "Rule: many SSH attempts => brute force",
         "conclusion_template": "Conclusion: {X} is performing a brute force attack",
+    },
+    {
+        "name": "botnet_malicious",
+        "premises": [
+            ("botnet", "?X"),
+        ],
+        "conclusion": ("malicious", "?X"),
+        "rule_text": "Rule: botnet => malicious",
+        "conclusion_template": "Conclusion: {X} is confirmed malicious",
     },
     {
         "name": "ddos_malicious",
@@ -121,18 +148,21 @@ def derive_base_facts(
             t = _parse_pkt_time(pkt, now)
             ip_packets[ip].append({**pkt, "_time": t})
 
+    high_syn_ips = []
+
     for ip, pkts in ip_packets.items():
         # Packets within the last 5.0 seconds
         pkts_5s = [p for p in pkts if (now - 5.0) <= p["_time"] <= (now + 0.05)]
         # Packets within the last 1.0 second
         pkts_1s = [p for p in pkts if (now - 1.0) <= p["_time"] <= (now + 0.05)]
 
-        # 1. high_syn_rate(IP): more than 15 SYN packets within the last 1 second
+        # 1. high_syn_rate(IP): more than SYN_RATE_THRESHOLD (10) SYN packets within 1 second
         syn_1s = [p for p in pkts_1s if p.get("flags") == "SYN"]
-        if len(syn_1s) > 15:
+        if len(syn_1s) > SYN_RATE_THRESHOLD:
             fact = ("high_syn_rate", ip)
             facts.add(fact)
             evidence[fact] = f"Observed: {len(syn_1s)} SYN packets from {ip} in the last second"
+            high_syn_ips.append(ip)
 
         # 2. single_target_port(IP, PORT): at least 90% of IP's packets go to one port
         if pkts:
@@ -146,19 +176,26 @@ def derive_base_facts(
                     pct = int(round(ratio * 100))
                     evidence[fact] = f"Observed: {pct}% of its packets target port {most_common_port}"
 
-        # 3. many_ports(IP): more than 8 distinct destination ports within 5 seconds
+        # 3. many_ports(IP): more than DISTINCT_PORTS_THRESHOLD distinct destination ports within 5 seconds
         distinct_ports = {p.get("dst_port") for p in pkts_5s if p.get("dst_port") is not None}
-        if len(distinct_ports) > 8:
+        if len(distinct_ports) > DISTINCT_PORTS_THRESHOLD:
             fact = ("many_ports", ip)
             facts.add(fact)
             evidence[fact] = f"Observed: {len(distinct_ports)} distinct destination ports targeted within 5 seconds"
 
-        # 4. many_ssh_attempts(IP): more than 10 packets to port 22 within 5 seconds
+        # 4. many_ssh_attempts(IP): more than SSH_ATTEMPTS_THRESHOLD packets to port 22 within 5 seconds
         ssh_pkts = [p for p in pkts_5s if p.get("dst_port") == 22]
-        if len(ssh_pkts) > 10:
+        if len(ssh_pkts) > SSH_ATTEMPTS_THRESHOLD:
             fact = ("many_ssh_attempts", ip)
             facts.add(fact)
             evidence[fact] = f"Observed: {len(ssh_pkts)} connection attempts to port 22 (SSH) within 5 seconds"
+
+    # Coordinated botnet detection: if 2 or more distinct IPs show high SYN rate
+    if len(high_syn_ips) >= BOTNET_IP_COUNT_THRESHOLD:
+        for ip in high_syn_ips:
+            fact = ("botnet_participant", ip)
+            facts.add(fact)
+            evidence[fact] = f"Observed: coordinated multi-source SYN flood across {len(high_syn_ips)} distributed IPs"
 
     return facts, evidence
 
@@ -266,15 +303,13 @@ def forward_chain(
 # Main Detection Interface
 # ============================================================================
 
-def detect(
+def detect_all(
     window: Any,
     now: Optional[float] = None
-) -> Optional[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """
-    Inspect the rolling packet window using forward chaining.
-    Returns:
-    - Dict with attack_type, src_ip, rule_fired, and plain-English proof_trace if detected.
-    - None for benign/normal traffic.
+    Inspect the rolling packet window using forward chaining and return
+    detections for ALL offending attacker IPs.
     """
     current_time = now if now is not None else time.time()
     packet_list = list(window) if window else []
@@ -282,51 +317,65 @@ def detect(
     # Step 1: Derive base facts from packets
     base_facts, evidence = derive_base_facts(packet_list, current_time)
     if not base_facts:
-        return None
+        return []
 
     # Step 2 & 3: Run forward chaining
     known_facts, derivations = forward_chain(base_facts, RULES)
 
-    # Check for primary attack classifications: ddos, port_scan, brute_force
-    detected_attack = None
+    # Group derivations by source IP
+    ip_to_derivation: Dict[str, Dict[str, Any]] = {}
     for deriv in derivations:
         c_name = deriv["conclusion"][0]
-        if c_name in ("ddos", "port_scan", "brute_force"):
-            detected_attack = deriv
-            break
+        if c_name in ("botnet", "ddos", "port_scan", "brute_force"):
+            src_ip = deriv["bindings"].get("X", "unknown")
+            # If botnet is derived for an IP, prefer it over generic ddos
+            if src_ip not in ip_to_derivation or c_name == "botnet":
+                ip_to_derivation[src_ip] = deriv
 
-    if not detected_attack:
-        return None
+    results = []
+    for src_ip, detected_attack in ip_to_derivation.items():
+        rule = detected_attack["rule"]
+        attack_type = rule.get("attack_type", "DDoS")
 
-    rule = detected_attack["rule"]
-    attack_type = rule.get("attack_type", "DDoS")
-    src_ip = detected_attack["bindings"].get("X", "unknown")
+        # Build plain-English proof trace
+        proof_trace: List[str] = []
 
-    # Build plain-English proof trace
-    proof_trace: List[str] = []
+        # 1. Base premise observations
+        for prem in detected_attack["premises"]:
+            if prem in evidence:
+                proof_trace.append(evidence[prem])
 
-    # 1. Base premise observations
-    for prem in detected_attack["premises"]:
-        if prem in evidence:
-            proof_trace.append(evidence[prem])
+        # 2. Rule fired
+        proof_trace.append(rule.get("rule_text", ""))
 
-    # 2. Rule fired
-    proof_trace.append(rule.get("rule_text", ""))
+        # 3. Intermediate conclusion
+        c_text = rule.get("conclusion_template", "Conclusion: Attack detected").format(**detected_attack["bindings"])
+        proof_trace.append(c_text)
 
-    # 3. Intermediate conclusion
-    c_text = rule.get("conclusion_template", "Conclusion: Attack detected").format(**detected_attack["bindings"])
-    proof_trace.append(c_text)
+        # 4. Check if malicious(X) was derived subsequently
+        for deriv in derivations:
+            if deriv["conclusion"] == ("malicious", src_ip):
+                m_rule_text = deriv["rule"].get("rule_text", "Rule: Attack => malicious")
+                proof_trace.append(m_rule_text)
+                break
 
-    # 4. Check if malicious(X) was derived subsequently
-    for deriv in derivations:
-        if deriv["conclusion"] == ("malicious", src_ip):
-            m_rule_text = deriv["rule"].get("rule_text", "Rule: Attack => malicious")
-            proof_trace.append(m_rule_text)
-            break
+        results.append({
+            "attack_type": attack_type,
+            "src_ip": src_ip,
+            "rule_fired": rule.get("rule_text", rule["name"]),
+            "proof_trace": proof_trace,
+        })
 
-    return {
-        "attack_type": attack_type,
-        "src_ip": src_ip,
-        "rule_fired": rule.get("rule_text", rule["name"]),
-        "proof_trace": proof_trace,
-    }
+    return results
+
+
+def detect(
+    window: Any,
+    now: Optional[float] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Inspect the rolling packet window and return the primary attack detection
+    or None if traffic is normal.
+    """
+    detections = detect_all(window, now=now)
+    return detections[0] if detections else None

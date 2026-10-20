@@ -31,6 +31,8 @@ def build_fallback_report(
     """
     attack_type = incident.get("attack_type", "DDoS")
     src_ip = incident.get("src_ip", "203.0.113.99")
+    city = incident.get("origin_city")
+    country = incident.get("origin_country")
     ts_str = incident.get("ts", "")
 
     formatted_time = "earlier today"
@@ -56,9 +58,11 @@ def build_fallback_report(
     else:
         actions_taken = f"identifying the ingress origin, adding a targeted firewall rule, and verifying packet cessation for {src_ip}"
 
+    location_clause = f" originating from {city}, {country} ({src_ip})" if city and country else f" from {src_ip}"
+
     p1 = (
         f"At {formatted_time}, our perimeter monitoring observed an unannounced surge of {attack_type} "
-        f"traffic directed at gateway services from {src_ip}. Our Bayesian analytical model established "
+        f"traffic directed at gateway services{location_clause}. Our Bayesian analytical model established "
         f"a malicious probability of {prob_pct}%, prompting immediate tactical staging while estate "
         f"operations continued without interruption."
     )
@@ -119,6 +123,8 @@ def write_report(
 
     attack_type = incident.get("attack_type", "DDoS")
     src_ip = incident.get("src_ip", "203.0.113.99")
+    city = incident.get("origin_city")
+    country = incident.get("origin_country")
     ts_str = incident.get("ts", "")
     prob_pct = round(prob * 100)
 
@@ -134,6 +140,8 @@ def write_report(
     else:
         actions_taken = f"identified {src_ip}, added firewall rule, verified cessation"
 
+    location_line = f"- Attacker location: {city}, {country}\n" if city and country else ""
+
     prompt = f"""You are the private cyber concierge for an ultra-luxury nature retreat and security agency.
 Write an incident report of approximately 120-180 words in the polite, calm, understated tone of a luxury concierge firm.
 
@@ -141,7 +149,7 @@ Use ONLY the following factual details and do not invent other facts:
 - Incident time: {ts_str or 'recently'}
 - Attack classification: {attack_type}
 - Attacker source IP: {src_ip}
-- Threat probability: {prob_pct}%
+{location_line}- Threat probability: {prob_pct}%
 - Tactical actions taken: {actions_taken}
 - Current status: Threat blocked and isolated, estate network returned to calm
 - Recommendation: Maintain firewall block on {src_ip} and monitor baselines
@@ -150,6 +158,7 @@ Requirements:
 - Exactly 2 to 3 plain text paragraphs.
 - Plain paragraphs ONLY. Absolutely no markdown symbols, no bullet points, no asterisks, no hashtags, and no jargon overload.
 - Must include the time, attack type, source IP, probability (as a percentage), actions taken, current status, and ONE recommendation.
+{f"- Mention that the attack originated from {city}, {country}." if city and country else ""}
 - Tone example: "At 2:00 PM, a DDoS attack was detected. The source IP has been blocked."
 """
 

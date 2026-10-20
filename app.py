@@ -42,9 +42,19 @@ except ImportError:
     from agency.simulator import Simulator
 
 try:
-    from modules.logic import detect
+    from modules.logic import detect, detect_all
 except ImportError:
-    from agency.modules.logic import detect
+    from agency.modules.logic import detect, detect_all
+
+try:
+    from attackers import ATTACKERS, get_attacker, get_random_attacker, get_botnet_attackers, AGENCY_HQ
+except ImportError:
+    from agency.attackers import ATTACKERS, get_attacker, get_random_attacker, get_botnet_attackers, AGENCY_HQ
+
+try:
+    from modules.search import find_attack_route, bfs, astar, ESTATE_GRAPH
+except ImportError:
+    from agency.modules.search import find_attack_route, bfs, astar, ESTATE_GRAPH
 
 try:
     from modules.bayes import explain as bayes_explain, most_suspicious as bayes_most_suspicious
@@ -92,11 +102,15 @@ STATIC_DIR = BASE_DIR / "static"
 simulator = Simulator()
 summary_history: deque = deque(maxlen=60)
 current_incident_id: Optional[int] = None
+active_incident_ips: Set[str] = set()
+session_watchlist: Dict[str, Dict[str, Any]] = {}
+
 last_detection: Optional[Dict[str, Any]] = None
 last_bayes: Optional[Dict[str, Any]] = None
 last_plan: Optional[Dict[str, Any]] = None
 last_report: Optional[Dict[str, Any]] = None
 last_resolved: Optional[Dict[str, Any]] = None
+last_route: Optional[Dict[str, Any]] = None
 prev_attack_active: bool = False
 
 
@@ -138,11 +152,11 @@ async def simulator_loop():
     Background worker:
     - Calls simulator.tick() once per second
     - Broadcasts traffic summary
-    - Runs logic.detect() on the packet window (only once per attack)
-    - Persists detected incidents in database & broadcasts {type: "detection"}
+    - Runs logic.detect_all() on the packet window to identify all active attackers
+    - Runs AI search, creates incidents, and triggers per-attacker defense pipeline
     - Detects attack termination, updates incident status to 'ended', and broadcasts {type: "attack_ended"}
     """
-    global current_incident_id, last_detection, prev_attack_active
+    global current_incident_id, last_detection, last_route, prev_attack_active
 
     while True:
         try:
@@ -150,32 +164,92 @@ async def simulator_loop():
             summary_history.append(summary)
             await manager.broadcast(summary)
 
-            # 1. Detection check on packet window (only once per attack cycle)
-            if simulator.attack_active and current_incident_id is None:
-                detection = detect(simulator.window)
-                if detection:
-                    incident_ts = datetime.now(timezone.utc).isoformat()
-                    incident_id = create_incident(
-                        attack_type=detection["attack_type"],
-                        src_ip=detection["src_ip"],
-                        ts=incident_ts,
-                        status="detected"
-                    )
-                    current_incident_id = incident_id
-                    detection_payload = {
-                        "type": "detection",
-                        "incident_id": incident_id,
-                        "attack_type": detection["attack_type"],
-                        "src_ip": detection["src_ip"],
-                        "rule_fired": detection["rule_fired"],
-                        "proof_trace": detection["proof_trace"],
-                        "ts": incident_ts
-                    }
-                    last_detection = detection_payload
-                    await manager.broadcast(detection_payload)
+            # 1. Detection check on packet window for any active attackers
+            if simulator.attack_active:
+                detections = detect_all(simulator.window)
+                for detection in detections:
+                    src_ip = detection["src_ip"]
+                    if src_ip not in active_incident_ips:
+                        active_incident_ips.add(src_ip)
+                        incident_ts = datetime.now(timezone.utc).isoformat()
+                        geo = get_attacker(src_ip)
+                        attack_type = detection["attack_type"]
+                        dst_port = 22 if "brute" in str(attack_type).lower() else 80
 
-                    # Trigger Module 5 Bayes reasoning engine after ~1 second without blocking loop
-                    asyncio.create_task(run_bayes_analysis(incident_id, detection["src_ip"]))
+                        # AI Search: Compute optimal path using BFS and A*
+                        route_info = find_attack_route(attack_type=attack_type, dst_port=dst_port)
+                        route_json_str = json.dumps(route_info)
+
+                        incident_id = create_incident(
+                            attack_type=attack_type,
+                            src_ip=src_ip,
+                            ts=incident_ts,
+                            status="detected",
+                            origin_city=geo.get("city"),
+                            origin_country=geo.get("country"),
+                            detected_at=incident_ts,
+                            route_json=route_json_str
+                        )
+                        current_incident_id = incident_id
+
+                        # Record in Watchlist
+                        session_watchlist[src_ip] = {
+                            "ip": src_ip,
+                            "city": geo.get("city", "Unknown"),
+                            "country": geo.get("country", "Unknown"),
+                            "flag": geo.get("flag", "🌐"),
+                            "lat": geo.get("lat", 0.0),
+                            "lon": geo.get("lon", 0.0),
+                            "attack_type": attack_type,
+                            "probability": 0.05,
+                            "status": "Detected",
+                            "packets": len([p for p in simulator.window if p.get("src_ip") == src_ip]),
+                            "incident_id": incident_id,
+                        }
+
+                        detection_payload = {
+                            "type": "detection",
+                            "incident_id": incident_id,
+                            "attack_type": attack_type,
+                            "src_ip": src_ip,
+                            "origin_city": geo.get("city"),
+                            "origin_country": geo.get("country"),
+                            "lat": geo.get("lat"),
+                            "lon": geo.get("lon"),
+                            "flag": geo.get("flag", "🌐"),
+                            "rule_fired": detection["rule_fired"],
+                            "proof_trace": detection["proof_trace"],
+                            "ts": incident_ts,
+                            "route": route_info,
+                        }
+                        last_detection = detection_payload
+                        await manager.broadcast(detection_payload)
+
+                        route_payload = {
+                            "type": "route",
+                            "incident_id": incident_id,
+                            "src_ip": src_ip,
+                            "attack_type": attack_type,
+                            "start": route_info["start"],
+                            "target": route_info["target"],
+                            "bfs": route_info["bfs"],
+                            "astar": route_info["astar"],
+                            "speedup_percent": route_info["speedup_percent"],
+                            "comparison_text": route_info["comparison_text"],
+                        }
+                        last_route = route_payload
+                        await manager.broadcast(route_payload)
+                        await manager.broadcast({"type": "watchlist", "watchlist": list(session_watchlist.values())})
+
+                        # Launch autonomous concierge defense pipeline for this attacker
+                        asyncio.create_task(run_incident_pipeline(
+                            incident_id=incident_id,
+                            src_ip=src_ip,
+                            attack_type=attack_type,
+                            geo=geo,
+                            route_info=route_info,
+                            dst_port=dst_port
+                        ))
 
             # 2. Check if an active attack concluded during this tick
             if prev_attack_active and not simulator.attack_active:
@@ -183,6 +257,7 @@ async def simulator_loop():
                 if current_incident_id is not None:
                     update_incident(current_incident_id, status="ended")
                     current_incident_id = None
+                active_incident_ips.clear()
 
             prev_attack_active = simulator.attack_active
 
@@ -192,60 +267,177 @@ async def simulator_loop():
         await asyncio.sleep(1.0)
 
 
-async def run_bayes_analysis(incident_id: int, src_ip: str):
+async def run_incident_pipeline(
+    incident_id: int,
+    src_ip: str,
+    attack_type: str = "DDoS",
+    geo: Optional[Dict[str, Any]] = None,
+    route_info: Optional[Dict[str, Any]] = None,
+    dst_port: int = 80
+):
     """
-    Module 5: Bayes probability engine runner.
-    Waits 1 second after detection, computes source rate, picks most suspicious packet,
-    computes posterior probability and step-by-step reasoning, persists probability
-    to incident in SQLite, and broadcasts {type: 'bayes'}.
+    Autonomous multi-stage defense response pipeline executed per attacker IP:
+    1. Bayes Reasoning: compute posterior probability & step-by-step likelihood
+    2. Defense Planning: STRIPS containment sequence adapted to attack type
+    3. Concierge Dispatch: GenAI incident report with origin location
+    4. Threat Neutralization: firewall block & baseline tranquility restoration
     """
-    global last_bayes
+    global last_bayes, last_plan, last_report, last_resolved, current_incident_id
     await asyncio.sleep(1.0)
     try:
         now = time.time()
-        # 1. Compute source rate (packets from that IP in the last second)
+        geo = geo or get_attacker(src_ip)
+
+        # 1. Bayes Analysis
         pkts_1s = [
             p for p in simulator.window
             if p.get("src_ip") == src_ip and (now - 1.0) <= p.get("_time", 0) <= now
         ]
         src_rate = float(len(pkts_1s)) if pkts_1s else 40.0
-
-        # 2. Pick most suspicious packet from attacker in window
         suspicious_pkt = bayes_most_suspicious(simulator.window, src_ip, src_rate=src_rate)
         if not suspicious_pkt:
             suspicious_pkt = {"size": 40, "flags": "SYN", "src_ip": src_ip, "_time": now}
 
-        # 3. Call bayes.explain()
         explanation = bayes_explain(suspicious_pkt, src_rate=src_rate)
+        posterior = explanation["posterior"]
+        update_incident(incident_id, probability=posterior, status="analyzing")
 
-        # 4. Save probability to incident row in SQLite
-        update_incident(incident_id, probability=explanation["posterior"])
+        if src_ip in session_watchlist:
+            session_watchlist[src_ip]["probability"] = posterior
+            session_watchlist[src_ip]["status"] = "Analyzing"
 
-        # 5. Broadcast {type: "bayes", incident_id, prior, steps, posterior}
         bayes_payload = {
             "type": "bayes",
             "incident_id": incident_id,
+            "src_ip": src_ip,
+            "prior": explanation["prior"],
+            "steps": explanation["steps"],
+            "posterior": posterior,
+        }
+        last_bayes = bayes_payload
+        await manager.broadcast(bayes_payload)
+        await manager.broadcast({"type": "watchlist", "watchlist": list(session_watchlist.values())})
+
+        await asyncio.sleep(1.0)
+
+        # 2. Defense Planner
+        incident_metadata = {
+            "id": incident_id,
+            "src_ip": src_ip,
+            "dst_port": dst_port,
+            "attack_type": attack_type,
+        }
+        plan_result = make_plan(incident_metadata)
+        plan_json_str = json.dumps(plan_result)
+        update_incident(incident_id, plan_json=plan_json_str)
+
+        plan_payload = {
+            "type": "plan",
+            "incident_id": incident_id,
+            "src_ip": src_ip,
+            "goal": plan_result["goal"],
+            "steps": plan_result["steps"],
+            "states_explored": plan_result["states_explored"],
+        }
+        last_plan = plan_payload
+        await manager.broadcast(plan_payload)
+
+        await asyncio.sleep(1.0)
+
+        # 3. Concierge Incident Report (GenAI)
+        incident_info = {
+            "id": incident_id,
+            "attack_type": attack_type,
+            "src_ip": src_ip,
+            "origin_city": geo.get("city", "Geneva"),
+            "origin_country": geo.get("country", "Switzerland"),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        report_body, generated_by = await asyncio.to_thread(
+            write_report, incident_info, plan_result, posterior
+        )
+        report_ts = datetime.now(timezone.utc).isoformat()
+        report_id = save_report(
+            incident_id=incident_id,
+            body=report_body,
+            generated_by=generated_by,
+            ts=report_ts,
+        )
+        report_payload = {
+            "type": "report",
+            "incident_id": incident_id,
+            "src_ip": src_ip,
+            "report_id": report_id,
+            "body": report_body,
+            "generated_by": generated_by,
+            "ts": report_ts,
+        }
+        last_report = report_payload
+        await manager.broadcast(report_payload)
+
+        await asyncio.sleep(1.0)
+
+        # 4. Neutralization / Block
+        simulator.block_ip(src_ip)
+        blocked_ts = datetime.now(timezone.utc).isoformat()
+        update_incident(incident_id, status="blocked", blocked_at=blocked_ts)
+
+        if src_ip in session_watchlist:
+            session_watchlist[src_ip]["status"] = "Blocked"
+
+        active_incident_ips.discard(src_ip)
+        if not active_incident_ips:
+            simulator.stop_attack()
+            current_incident_id = None
+
+        resolved_payload = {
+            "type": "resolved",
+            "incident_id": incident_id,
+            "src_ip": src_ip,
+            "status": "blocked",
+            "blocked_at": blocked_ts,
+        }
+        last_resolved = resolved_payload
+        await manager.broadcast(resolved_payload)
+        await manager.broadcast({"type": "watchlist", "watchlist": list(session_watchlist.values())})
+
+    except Exception as exc:
+        logger.exception(f"Error in incident pipeline for {src_ip}: {exc}")
+
+
+async def run_bayes_analysis(incident_id: int, src_ip: str):
+    """Module 5 runner (preserved for test compatibility)."""
+    global last_bayes
+    await asyncio.sleep(1.0)
+    try:
+        now = time.time()
+        pkts_1s = [
+            p for p in simulator.window
+            if p.get("src_ip") == src_ip and (now - 1.0) <= p.get("_time", 0) <= now
+        ]
+        src_rate = float(len(pkts_1s)) if pkts_1s else 40.0
+        suspicious_pkt = bayes_most_suspicious(simulator.window, src_ip, src_rate=src_rate)
+        if not suspicious_pkt:
+            suspicious_pkt = {"size": 40, "flags": "SYN", "src_ip": src_ip, "_time": now}
+        explanation = bayes_explain(suspicious_pkt, src_rate=src_rate)
+        update_incident(incident_id, probability=explanation["posterior"])
+        bayes_payload = {
+            "type": "bayes",
+            "incident_id": incident_id,
+            "src_ip": src_ip,
             "prior": explanation["prior"],
             "steps": explanation["steps"],
             "posterior": explanation["posterior"]
         }
         last_bayes = bayes_payload
         await manager.broadcast(bayes_payload)
-
-        # Trigger Module 6 STRIPS Planner engine ~1 second after Bayes finishes
         asyncio.create_task(run_planner_analysis(incident_id, src_ip))
-
     except Exception as exc:
         logger.exception(f"Error in Bayes analysis: {exc}")
 
 
 async def run_planner_analysis(incident_id: int, src_ip: str):
-    """
-    Module 6: STRIPS-style Automated Defense Planner runner.
-    Waits 1 second after Bayes finishes, synthesizes a minimal-action containment plan,
-    saves the plan as JSON in the incident's plan_json column in SQLite,
-    and broadcasts {type: 'plan', incident_id, goal, steps, states_explored}.
-    """
+    """Module 6 runner (preserved for test compatibility)."""
     global last_plan
     await asyncio.sleep(1.0)
     try:
@@ -256,53 +448,40 @@ async def run_planner_analysis(incident_id: int, src_ip: str):
             "attack_type": "DDoS"
         }
         plan_result = make_plan(incident_metadata)
-
-        # Save plan JSON string to incident record in SQLite
         plan_json_str = json.dumps(plan_result)
         update_incident(incident_id, plan_json=plan_json_str)
-
-        # Broadcast {type: "plan", incident_id, goal, steps, states_explored}
         plan_payload = {
             "type": "plan",
             "incident_id": incident_id,
+            "src_ip": src_ip,
             "goal": plan_result["goal"],
             "steps": plan_result["steps"],
             "states_explored": plan_result["states_explored"]
         }
         last_plan = plan_payload
         await manager.broadcast(plan_payload)
-
-        # Trigger Stage 6 Report & Defense pipeline ~1 second after Plan
         asyncio.create_task(run_report_and_resolve_pipeline(incident_id, src_ip, plan_result))
-
     except Exception as exc:
         logger.exception(f"Error in Planner analysis: {exc}")
 
 
 async def run_report_and_resolve_pipeline(incident_id: int, src_ip: str, plan_data: Any):
-    """
-    Stage 6 automated response pipeline:
-    1. Waits ~1s, generates incident report via genai.write_report (off the event loop),
-       saves it with db.save_report, and broadcasts {type: "report", ...}.
-    2. Waits ~1s, applies defense: adds attacker IP to simulator blocklist,
-       stops attack traffic immediately, and updates incident status to 'blocked'.
-    3. Broadcasts {type: "resolved", incident_id, src_ip, status: "blocked"}.
-    """
+    """Stage 6 report & resolve runner (preserved for test compatibility)."""
     global last_report, last_resolved, current_incident_id
     await asyncio.sleep(1.0)
     try:
+        geo = get_attacker(src_ip)
         incident_info = {
             "id": incident_id,
             "attack_type": "DDoS",
             "src_ip": src_ip,
+            "origin_city": geo.get("city"),
+            "origin_country": geo.get("country"),
             "ts": datetime.now(timezone.utc).isoformat()
         }
-
-        # 1. Report generation (off the event loop)
         report_body, generated_by = await asyncio.to_thread(
             write_report, incident_info, plan_data, 0.95
         )
-
         report_ts = datetime.now(timezone.utc).isoformat()
         report_id = save_report(
             incident_id=incident_id,
@@ -310,10 +489,10 @@ async def run_report_and_resolve_pipeline(incident_id: int, src_ip: str, plan_da
             generated_by=generated_by,
             ts=report_ts
         )
-
         report_payload = {
             "type": "report",
             "incident_id": incident_id,
+            "src_ip": src_ip,
             "report_id": report_id,
             "body": report_body,
             "generated_by": generated_by,
@@ -322,29 +501,25 @@ async def run_report_and_resolve_pipeline(incident_id: int, src_ip: str, plan_da
         last_report = report_payload
         await manager.broadcast(report_payload)
 
-        # Pause about 1 second between stages
         await asyncio.sleep(1.0)
-
-        # 2. Apply defense: block IP, stop attack traffic immediately, update status to 'blocked'
         simulator.block_ip(src_ip)
         simulator.stop_attack()
         simulator.clear_attack_traffic(src_ip)
-
-        update_incident(incident_id, status="blocked")
+        blocked_ts = datetime.now(timezone.utc).isoformat()
+        update_incident(incident_id, status="blocked", blocked_at=blocked_ts)
         current_incident_id = None
-
-        # 3. Broadcast resolved event
         resolved_payload = {
             "type": "resolved",
             "incident_id": incident_id,
             "src_ip": src_ip,
-            "status": "blocked"
+            "status": "blocked",
+            "blocked_at": blocked_ts
         }
         last_resolved = resolved_payload
         await manager.broadcast(resolved_payload)
-
     except Exception as exc:
         logger.exception(f"Error in report and resolve pipeline: {exc}")
+
 
 
 
@@ -737,7 +912,7 @@ async def api_me(request: Request):
 @app.post("/api/attack")
 async def trigger_attack(request: Request):
     """
-    POST /api/attack -> starts a simulated DDoS attack for 8 seconds.
+    POST /api/attack -> starts a simulated attack (ddos, botnet, port_scan, brute_force, or random).
     Requires authenticated session.
     Returns 409 Conflict if an attack is already in progress.
     """
@@ -751,15 +926,39 @@ async def trigger_attack(request: Request):
             status_code=409
         )
 
-    global last_bayes, last_plan, last_report, last_resolved
+    attack_type = "random"
+    try:
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            body = await request.json()
+            if isinstance(body, dict) and "type" in body:
+                attack_type = str(body["type"]).strip().lower()
+    except Exception:
+        pass
+
+    if attack_type == "random" or not attack_type:
+        import random
+        attack_type = random.choice(["ddos", "botnet", "port_scan", "brute_force"])
+
+    global last_bayes, last_plan, last_report, last_resolved, last_route
     last_bayes = None
     last_plan = None
     last_report = None
     last_resolved = None
+    last_route = None
 
-    simulator.start_attack(duration=8.0)
-    await manager.broadcast({"type": "attack_started"})
-    return {"status": "attack_started", "duration": 8.0}
+    simulator.start_attack(duration=8.0, attack_type=attack_type)
+    await manager.broadcast({
+        "type": "attack_started",
+        "attack_type": attack_type,
+        "attack_ips": simulator.attack_ips
+    })
+    return {
+        "status": "attack_started",
+        "attack_type": attack_type,
+        "duration": 8.0,
+        "attack_ips": simulator.attack_ips
+    }
 
 
 @app.post("/api/reset")
@@ -774,7 +973,7 @@ async def reset_demo(request: Request):
     if not username:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    global last_detection, last_bayes, last_plan, last_report, last_resolved, current_incident_id
+    global last_detection, last_bayes, last_plan, last_report, last_resolved, last_route, current_incident_id
     simulator.unblock_all()
     simulator.stop_attack()
     simulator.clear_attack_traffic()
@@ -784,9 +983,13 @@ async def reset_demo(request: Request):
     last_plan = None
     last_report = None
     last_resolved = None
+    last_route = None
     current_incident_id = None
+    active_incident_ips.clear()
+    session_watchlist.clear()
 
     await manager.broadcast({"type": "reset"})
+    await manager.broadcast({"type": "watchlist", "watchlist": []})
     return {"status": "reset", "detail": "Simulation reset: blocklist cleared and replay state reset"}
 
 
@@ -804,13 +1007,26 @@ async def get_incidents(request: Request):
     return JSONResponse(incidents)
 
 
+@app.get("/api/watchlist")
+async def get_watchlist(request: Request):
+    """
+    GET /api/watchlist -> returns current session watchlist of unique attacker IPs.
+    Requires authenticated session.
+    """
+    username = request.session.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return JSONResponse(list(session_watchlist.values()))
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
     WS /ws -> Real-time telemetry stream.
     - Requires authenticated session cookie; closed with code 1008 if unauthenticated.
     - On connect: replays the last 30 seconds of telemetry summaries.
-    - Replays active attack state, last detection, last Bayes explanation, last plan, last report, and last resolved.
+    - Replays active attack state, last detection, route, Bayes explanation, plan, report, and resolved.
     - Broadcasts live 1-second summary updates from simulator.
     """
     username = websocket.session.get("username")
@@ -828,11 +1044,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
         # 2. If an attack is actively running, inform client immediately
         if simulator.attack_active:
-            await websocket.send_json({"type": "attack_started"})
+            await websocket.send_json({
+                "type": "attack_started",
+                "attack_type": simulator.attack_type,
+                "attack_ips": simulator.attack_ips
+            })
 
         # 3. Replay cached progression events so page refresh mid-story shows the full context
         if last_detection:
             await websocket.send_json(last_detection)
+
+        if last_route:
+            await websocket.send_json(last_route)
 
         if last_bayes:
             await websocket.send_json(last_bayes)
@@ -846,11 +1069,18 @@ async def websocket_endpoint(websocket: WebSocket):
         if last_resolved:
             await websocket.send_json(last_resolved)
 
+        if session_watchlist:
+            await websocket.send_json({
+                "type": "watchlist",
+                "watchlist": list(session_watchlist.values())
+            })
+
         # Keep connection open and await any client frames
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
         manager.disconnect(websocket)
+
 
 
 

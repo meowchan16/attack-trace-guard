@@ -105,17 +105,48 @@ flowchart TD
   - Goal State: `{"threat_blocked", "block_verified"}`
 - **Action Schema:** Stored as structured data with explicit preconditions, add effects, delete effects, and templated descriptions:
   - `identify_source_ip`: Pre: `{"attack_detected"}` $\rightarrow$ Add: `{"ip_identified"}`
-  - `add_firewall_rule`: Pre: `{"ip_identified"}` $\rightarrow$ Add: `{"threat_blocked"}`
+  - `add_firewall_rule`: Pre: `{"ip_identified"}` $\rightarrow$ Add: `{"threat_blocked"}` (dynamically adapts description: "Lock port {dst_port}" for port scans, "Block SSH attempts" for brute force).
   - `verify_block`: Pre: `{"threat_blocked"}` $\rightarrow$ Add: `{"block_verified"}`
   - *Distractor actions* (`rate_limit_port`, `notify_admin`) are safely pruned during minimal path search.
 - **Search Algorithm:** Breadth-first forward search over the state space. Guarantees finding the optimal minimal sequence of actions.
 
-### 4. GenAI Luxury Concierge Reporting (`genai.py`)
-- **Prompt Engineering:** Directs Google Gemini (`gemini-2.5-flash`) to write an understated, 120–180 word incident dispatch in the calm tone of a private estate concierge.
+### 4. Module 7: AI Search & Route Tracing (`modules/search.py`)
+- **Estate Graph Topology:** 10 networked infrastructure nodes (Gateway Router, External Firewall, Core Switch, Web Server, SSH Bastion, Database Master, Read Replica, DNS Server, Internal Storage, API Gateway) with edge costs and 2D spatial coordinates.
+- **Search Comparison:**
+  - **Breadth-First Search (BFS):** Uninformed search expanding uniformly across graph branches. Explores **9 nodes** to reach the Web Server target.
+  - **A\* Search:** Heuristic-directed search prioritizing nodes via $f(n) = g(n) + h(n)$. Uses an admissible straight-line Euclidean distance heuristic ($h(n) \le h^*(n)$). Explores exactly **4 nodes** (`Gateway Router -> External Firewall -> Core Switch -> Web Server`).
+  - **Quantified Speedup:** $\frac{9 - 4}{9} = 55.6\% \approx 56\%$ fewer node explorations, tracing the attack path in real time with an animated terracotta glow.
+
+### 5. GenAI Luxury Concierge Reporting (`genai.py`)
+- **Prompt Engineering:** Directs Google Gemini (`gemini-2.5-flash`) to write an understated, 120–180 word incident dispatch in the calm tone of a private estate concierge, enriched with origin city and country geolocation.
 - **Privacy Guarantees:** 
   - `GEMINI_API_KEY` is loaded on the backend only; never logged, never printed, and never exposed to the client.
 - **Resilient Fallback:** 
   - If the API key is missing, network fails, or model rejects the request, a 15-second `ThreadPoolExecutor` timeout activates the procedural luxury fallback report. The UI seamlessly tags the source as `Gemini` or `Template`.
+
+---
+
+## Stage 8: Demo-Impact Features
+
+1. **Multi-Attacker Simulated Geolocation (`attackers.py`):**
+   - Pool of 8 RFC 5737 compliant profiles: Lagos (NG), Moscow (RU), São Paulo (BR), Hanoi (VN), Frankfurt (DE), Seoul (KR), Toronto (CA), Mumbai (IN).
+   - Zero external APIs: all coordinates and locations are deterministically simulated.
+2. **Four Distinct Attack Vectors:**
+   - **DDoS:** Port 80 SYN flood from a single external IP.
+   - **Botnet:** Coordinated 5-attacker swarm with per-IP rate threshold detection.
+   - **Port Scan:** Ingress probing scanning 10+ distinct ports within 5 seconds.
+   - **Brute Force:** High-velocity SSH credential stuffing to port 22.
+3. **The Case File Card (WHEN, WHERE, HOW):**
+   - Dossier-style folio card with status chip.
+   - **WHEN:** Detection timestamp and response duration.
+   - **WHERE:** Attacker city/country, source IP, target service, and interactive SVG World Map with pulsating coordinates and curved geodesic arc to London HQ.
+   - **HOW:** Plain-English vector breakdown and the exact logic rule fired.
+   - **Chronicle Timeline:** 5-step vertical progression rail (Attack Began $\rightarrow$ Logic Recognized $\rightarrow$ Probability Computed $\rightarrow$ Plan Synthesized $\rightarrow$ Report Authored $\rightarrow$ Attacker Blocked).
+4. **Network Topology Map:**
+   - SVG estate map in soft sage on forest green.
+   - Animates the AI-traced attack route in terracotta upon detection, transitioning to calm olive when perimeter gates are sealed.
+5. **Session Watchlist:**
+   - Real-time tabular tracking of all identified threat actors during the session. Clicking any IP highlights their location on the map.
 
 ---
 
@@ -172,7 +203,8 @@ venv/bin/pytest -v
 - **`test_bayes.py`:** Mathematical precision of odds updating, feature monotonicity, and worked-example verification.
 - **`test_planner.py`:** BFS optimality, precondition reachability, distractor action pruning, and unsolvable goal handling.
 - **`test_genai.py`:** SDK client generation, mock failure handling, and procedural fallback compliance.
-- **`test_simulator.py`:** Gaussian packet distributions, rolling window pruning, and blocklist dropping.
+- **`test_search.py`:** Estate topology graph, BFS vs A* search, Euclidean heuristic admissibility, and 56% speedup metrics.
+- **`test_stage8.py`:** Comprehensive Stage 8 verification across all 4 attack types, pre-attack unblocking, multi-attacker botnets, watchlist endpoint, and geolocation persistence.
 
 ---
 
@@ -196,7 +228,12 @@ CREATE TABLE incidents (
     src_ip TEXT NOT NULL,
     probability REAL NOT NULL,
     status TEXT NOT NULL,        -- 'detected', 'ended', 'blocked'
-    plan_json TEXT               -- Serialized STRIPS plan object
+    plan_json TEXT,              -- Serialized STRIPS plan object
+    origin_city TEXT,            -- Simulated city (e.g. Lagos, Moscow)
+    origin_country TEXT,         -- Simulated country (e.g. Nigeria, Russia)
+    detected_at TEXT,            -- ISO detection timestamp
+    blocked_at TEXT,             -- ISO mitigation timestamp
+    route_json TEXT              -- AI search path & comparison metrics
 );
 
 CREATE TABLE reports (

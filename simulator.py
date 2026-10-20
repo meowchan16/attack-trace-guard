@@ -3,7 +3,7 @@ Traffic simulator for the Boutique Cybersecurity Agency Dashboard.
 
 Generates:
 - Normal background estate traffic (Gaussian size distribution, ports 80/443/22/53, flags ACK/PSH).
-- Coordinated SYN attack packets (port 80, flag SYN, distinct payload sizes).
+- Coordinated SYN / Botnet / Port Scan / Brute Force attack packets.
 - A rolling 5-second in-memory inspection window (pruned by timestamp).
 - Blocklist enforcement dropping denied traffic before entry into window.
 - Real-time 1-second summary telemetry dictionaries.
@@ -13,7 +13,7 @@ from collections import deque
 from datetime import datetime, timezone
 import random
 import time
-from typing import Any, Deque, Dict, Optional, Set
+from typing import Any, Deque, Dict, List, Optional, Set
 
 
 def normal_packet(ts: Optional[float] = None) -> Dict[str, Any]:
@@ -48,33 +48,41 @@ def normal_packet(ts: Optional[float] = None) -> Dict[str, Any]:
     }
 
 
-def attack_packet(attacker_ip: str = "203.0.113.99", ts: Optional[float] = None) -> Dict[str, Any]:
+def attack_packet(
+    attacker_ip: str = "203.0.113.99",
+    dst_port: int = 80,
+    flags: str = "SYN",
+    size: Optional[int] = None,
+    ts: Optional[float] = None
+) -> Dict[str, Any]:
     """
     Generate an adversarial probe packet.
-    - Destination Port: 80
-    - Flags: SYN
+    - Destination Port: defaults to 80 (or custom e.g. 22 for brute force, scanned port)
+    - Flags: defaults to SYN
     - Size: mostly 40 bytes with occasional distinctive sizes (1337 or 9000 bytes)
     - is_attack: True
     """
     now_ts = ts if ts is not None else time.time()
     iso_ts = datetime.fromtimestamp(now_ts, timezone.utc).isoformat()
 
-    # Mostly 40 bytes (standard TCP SYN), occasionally 1337 or 9000 bytes
-    rand_val = random.random()
-    if rand_val < 0.08:
-        size = 1337
-    elif rand_val < 0.15:
-        size = 9000
+    if size is None:
+        rand_val = random.random()
+        if rand_val < 0.08:
+            pkt_size = 1337
+        elif rand_val < 0.15:
+            pkt_size = 9000
+        else:
+            pkt_size = 40
     else:
-        size = 40
+        pkt_size = size
 
     return {
         "ts": iso_ts,
         "_time": now_ts,
         "src_ip": attacker_ip,
-        "dst_port": 80,
-        "size": size,
-        "flags": "SYN",
+        "dst_port": dst_port,
+        "size": pkt_size,
+        "flags": flags,
         "is_attack": True,
     }
 
@@ -82,7 +90,7 @@ def attack_packet(attacker_ip: str = "203.0.113.99", ts: Optional[float] = None)
 class Simulator:
     """
     Simulates network ingress traffic with an in-memory rolling window,
-    IP blocklist, and optional attack state.
+    IP blocklist, multi-attacker support, and selectable attack types.
     """
 
     def __init__(self, window_seconds: float = 5.0):
@@ -91,11 +99,36 @@ class Simulator:
         self.blocklist: Set[str] = set()
         self.attack_active: bool = False
         self._attack_until: Optional[float] = None
+        self.attack_type: str = "ddos"
+        self.attack_ips: List[str] = ["203.0.113.99"]
 
-    def start_attack(self, duration: float = 8.0) -> None:
-        """Activate simulated attack for a designated duration in seconds."""
+    def start_attack(
+        self,
+        duration: float = 8.0,
+        attack_type: str = "ddos",
+        attack_ips: Optional[List[str]] = None
+    ) -> None:
+        """
+        Activate simulated attack for a designated duration in seconds.
+        Removes chosen attacker IPs from blocklist BEFORE starting so attack traffic is never dropped.
+        """
         self.attack_active = True
         self._attack_until = time.time() + duration
+        self.attack_type = (attack_type or "ddos").lower()
+
+        if attack_ips:
+            self.attack_ips = list(attack_ips)
+        else:
+            if self.attack_type == "botnet":
+                from attackers import get_botnet_attackers
+                self.attack_ips = [a["ip"] for a in get_botnet_attackers(5)]
+            else:
+                from attackers import get_random_attacker
+                self.attack_ips = [get_random_attacker()["ip"]]
+
+        # Requirement 0: remove chosen attacker IPs from blocklist BEFORE starting
+        for ip in self.attack_ips:
+            self.unblock_ip(ip)
 
     def stop_attack(self) -> None:
         """Deactivate simulated attack immediately."""
@@ -133,7 +166,7 @@ class Simulator:
         Execute one 1-second simulation step:
         - Checks and expires attack state if timer elapsed
         - Generates normal traffic (3 to 7 packets)
-        - Generates attack traffic (~40 packets) if attack_active
+        - Generates attack traffic depending on attack_type
         - Filters blocked packets
         - Appends accepted packets to the rolling window
         - Prunes packets older than 5 seconds
@@ -147,18 +180,39 @@ class Simulator:
             if current_time >= self._attack_until:
                 self.stop_attack()
 
-        # 1. Generate packet batch for this tick
+        # 1. Generate normal traffic packet batch for this tick
         batch = []
         normal_count = random.randint(3, 7)
         for _ in range(normal_count):
             batch.append(normal_packet(ts=current_time))
 
+        # 2. Generate attack traffic if active
         if self.attack_active:
-            attack_count = random.randint(38, 42)
-            for _ in range(attack_count):
-                batch.append(attack_packet(ts=current_time))
+            if self.attack_type == "botnet":
+                # 5 attackers at once, ~12-14 SYN/sec each to port 80
+                for ip in self.attack_ips:
+                    per_attacker_count = random.randint(12, 14)
+                    for _ in range(per_attacker_count):
+                        batch.append(attack_packet(attacker_ip=ip, dst_port=80, ts=current_time))
+            elif self.attack_type == "port_scan":
+                # one attacker touching 10+ different ports
+                attacker_ip = self.attack_ips[0] if self.attack_ips else "203.0.113.99"
+                scan_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 3306, 8080, 8443]
+                for p in scan_ports:
+                    batch.append(attack_packet(attacker_ip=attacker_ip, dst_port=p, ts=current_time))
+            elif self.attack_type == "brute_force":
+                # one attacker sending 12+ packets/5s to port 22
+                attacker_ip = self.attack_ips[0] if self.attack_ips else "203.0.113.99"
+                for _ in range(14):
+                    batch.append(attack_packet(attacker_ip=attacker_ip, dst_port=22, flags="ACK", size=250, ts=current_time))
+            else:
+                # default ddos: one attacker, SYN flood to port 80 (~40 packets)
+                attacker_ip = self.attack_ips[0] if self.attack_ips else "203.0.113.99"
+                attack_count = random.randint(38, 42)
+                for _ in range(attack_count):
+                    batch.append(attack_packet(attacker_ip=attacker_ip, dst_port=80, ts=current_time))
 
-        # 2. Process batch against blocklist
+        # 3. Process batch against blocklist
         accepted_count = 0
         blocked_count = 0
         accepted_sizes = []
@@ -171,10 +225,10 @@ class Simulator:
                 accepted_sizes.append(pkt["size"])
                 self.window.append(pkt)
 
-        # 3. Prune packets older than 5 seconds from rolling window
+        # 4. Prune packets older than 5 seconds from rolling window
         self.prune_window(current_time)
 
-        # 4. Compute telemetry metrics
+        # 5. Compute telemetry metrics
         avg_size = round(sum(accepted_sizes) / accepted_count, 1) if accepted_count > 0 else 0.0
 
         return {

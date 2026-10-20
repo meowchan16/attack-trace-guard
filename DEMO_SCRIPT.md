@@ -17,44 +17,49 @@
 
 ---
 
-### 0:25 – 0:50 · Perimeter Intrusion & Logic Engine (Module 4)
-- **What to Click:** Click the **"Launch Attack"** button in the hero panel.
+### 0:25 – 0:50 · Select Vector & Perimeter Intrusion (Modules 4 & 7)
+- **What to Click:** Choose an attack vector from the dropdown next to Launch Attack (e.g., **Botnet**, **Port scan**, or **DDoS**), then click **"Launch Attack"**.
 - **What to Say:**
-  > "I've triggered a simulated volumetric SYN-flood from an external IP (`203.0.113.99`). Immediately, the telemetry spikes to 45 packets per second and shifts to terracotta. Without human intervention, our Module 4 logic engine analyzes the rolling window and executes forward-chaining Horn clause deduction. In Column I, you see its mathematical proof trace: deriving high SYN rate and single target port, proving it is a DDoS, and concluding malicious intent."
+  > "Notice our vector selector: we can simulate a volumetric DDoS, a distributed 5-node botnet, a port scan, or an SSH brute force. Watch as I launch a Botnet attack. Telemetry instantly spikes and shifts to terracotta. The UI automatically smooth-scrolls to our new 'Case File' folio, flashing its border once. Concurrently, Module 7—our AI route tracer—benchmarks uninformed BFS against heuristic A* search: A* explores only 4 nodes compared to 9 for BFS, locating the adversary's attack path through the estate 56% faster."
 - **What the Audience Sees:**
   - Real-time line chart spikes to ~45 pps and shifts to terracotta (`#B5654A`).
   - Hero status changes to *"A disturbance at the gate..."*.
-  - Cover Story panel illuminates with the attacker IP and timestamp.
-  - Column I ("Recognition") streams: *"I know this one: DDoS"* with a 400ms staggered proof trace.
+  - Smooth-scroll directly to **The Case File** with a subtle terracotta flash.
+  - **Network Map Topology:** terracotta pulse animates along the traced route (`Gateway Router -> External Firewall -> Core Switch -> Web Server`).
+  - Search metric chip displays: *"A* searched 4 nodes vs 9 for BFS (56% faster)"*.
 
 ---
 
-### 0:50 – 1:15 · Bayesian Probability & Defense Planning (Modules 5 & 6)
+### 0:50 – 1:15 · The Case File: WHEN, WHERE & HOW
 - **What to Say:**
-  > "Next, Module 5 applies Bayes' Rule in odds formulation. Starting from a skeptical 5% prior, it updates odds across packet size, SYN flags, and source rate, calculating a 95% posterior probability of malice shown on our radial gauge. Immediately following, Module 6—our automated STRIPS planner—conducts a breadth-first forward search over possible actions to synthesize a verifiable 3-step containment plan: identifying the source IP, adding the firewall rule, and verifying packet cessation."
+  > "Look at The Case File: it delivers complete situational awareness without alarmism. Under WHEN, we see exact intrusion timestamps. Under WHERE, our simulated geolocation renders the attacker's origin on our interactive SVG World Map, plotting a curved geodesic arc directly to our London headquarters. Under HOW, plain-English forensics specify the exact vector and Horn-clause rule that fired. Below, the Chronicle vertical timeline ticks through the sequence from attack inception to resolution."
 - **What the Audience Sees:**
-  - Column II ("Probability") animates an SVG gauge up to 95%, displaying the 4-step odds multiplication breakdown.
-  - Column III ("The Plan") renders the 3-step action sequence, ticking off steps with completion rings.
+  - Case File header showing "Case File No. 00X" with status chip.
+  - Interactive SVG World Map showing pulsating attacker coordinates and golden arc to London.
+  - Tabbed interface for multi-attacker botnets allowing inspection of each source IP.
+  - Vertical Chronicle timeline nodes activating in real time.
+  - In Three Columns: Module 4 proof trace, Module 5 radial Bayesian odds gauge (animating from 5% to ~95%), and Module 6 STRIPS 3-step action plan.
 
 ---
 
-### 1:15 – 1:45 · Autonomous Defense, Quiet Resolution & GenAI Report
+### 1:15 – 1:40 · Autonomous Defense & Editorial Dispatch
 - **What to Say:**
-  > "Now watch the telemetry chart: the planner executes the defense, blocking the attacker IP at the perimeter boundary. Packets drop immediately back to baseline calm. Concurrently, our GenAI integration synthesizes an understated, polite incident report in the voice of a private estate concierge. Notice the drop cap, serif typography, and pull quote—informing estate managers without panic."
+  > "Watch the telemetry chart: our automated STRIPS planner executes the firewall block at the perimeter. The closed-gate icon locks in the Network Map, the attack path turns serene olive, and traffic drops immediately back to quiet baseline. Simultaneously, GenAI crafts an understated incident dispatch enriched with the attacker's geographic origin, formatted in classic editorial typography."
 - **What the Audience Sees:**
-  - Telemetry chart drops from 45 pps back to ~5 pps; color shifts back to serene olive.
+  - Telemetry chart drops back to ~5 pps; color shifts back to serene olive.
+  - Network Map node transitions from hostile terracotta to blocked olive with a closed-gate badge.
   - Hero status updates to: *"Threat blocked. All quiet on the network."*
-  - Cover story displays a calm olive `Resolved` badge.
   - Magazine Feature populates with a 3-paragraph editorial dispatch tagged `Gemini` (or `Template`).
 
 ---
 
-### 1:45 – 2:00 · Archival Memory & The Reset Ritual
-- **What to Click:** Scroll to **"Back Issues"** at the bottom, expand the newest accordion item, then scroll back up and click **"Reset demo"**.
+### 1:40 – 2:00 · Session Watchlist, Archives & Reset Ritual
+- **What to Click:** Scroll down to the **Watchlist** and **Back Issues**, expand the newest incident accordion, then scroll up and click **"Reset demo"**.
 - **What to Say:**
-  > "Every resolved incident is permanently recorded in SQLite under 'Back Issues' with full probabilities and audit trails. When our shift ends, clicking 'Reset demo' clears the firewall blocklist and resets the live simulation state while safely preserving the historical archive. That is The Agency: autonomous intelligence delivering unseen sanctuary."
+  > "Here in the Session Watchlist, every hostile IP detected during our shift is indexed with country flags and coordinates. Clicking any entry highlights them on the world map. Below, 'Back Issues' permanently archives the complete case file—including origin cities and AI search routes. When ready for the next demonstration, clicking 'Reset demo' safely unblocks the firewall while keeping historical memory intact."
 - **What the Audience Sees:**
-  - Expanding the accordion reveals the incident record, timestamp, probability badge, and defense sequence.
+  - Watchlist table showing attacker IPs, country flags, cities, and status badges.
+  - Expanded Back Issues accordion displaying origin geolocation, response duration, and plan steps.
   - Clicking "Reset demo" returns the UI to initial tranquility, ready for another demonstration cycle.
 
 ---

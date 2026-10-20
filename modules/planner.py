@@ -28,8 +28,14 @@ class Action:
         """Apply action effects to produce new state."""
         return (state - self.delete_effects) | self.add_effects
 
-    def format_description(self, src_ip: str, dst_port: int = 80) -> str:
+    def format_description(self, src_ip: str, dst_port: int = 80, attack_type: str = "DDoS") -> str:
         """Format the plain-English description with incident parameters."""
+        if self.name == "add_firewall_rule":
+            at_lower = str(attack_type).lower()
+            if "port_scan" in at_lower or "scan" in at_lower:
+                return f"Lock port {dst_port}"
+            if "brute" in at_lower:
+                return f"Block SSH attempts from {src_ip}"
         return self.description_template.format(src_ip=src_ip, dst_port=dst_port)
 
 
@@ -139,6 +145,7 @@ def make_plan(
     incident = incident or {}
     src_ip = incident.get("src_ip", "203.0.113.99")
     dst_port = incident.get("dst_port", 80)
+    attack_type = incident.get("attack_type", "DDoS")
 
     initial_state = frozenset(initial) if initial is not None else DEFAULT_INITIAL_STATE
     goal_state = frozenset(goal) if goal is not None else DEFAULT_GOAL
@@ -150,7 +157,7 @@ def make_plan(
         {
             "n": idx + 1,
             "action": action.name,
-            "description": action.format_description(src_ip=src_ip, dst_port=dst_port)
+            "description": action.format_description(src_ip=src_ip, dst_port=dst_port, attack_type=attack_type)
         }
         for idx, action in enumerate(action_path)
     ]
