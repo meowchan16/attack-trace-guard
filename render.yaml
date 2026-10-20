@@ -11,5 +11,3 @@ services:
         value: 3.11.11
       - key: SESSION_SECRET
         generateValue: true
-      - key: GEMINI_API_KEY
-        sync: false
