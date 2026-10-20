@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="The Agency — Private cybersecurity concierge offering discreet perimeter surveillance, automated STRIPS defense planning, Bayesian probability analysis, simulated world geolocation, AI route tracing, and tranquil AI reporting.">
+  <title>Dashboard — The Agency</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B705C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2L12 22'/%3E%3Cpath d='M12 7C8 7 5 10 5 14C5 18 8 21 12 21'/%3E%3Cpath d='M12 7C16 7 19 10 19 14C19 18 16 21 12 21'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+
+  <!-- ======================================================================
+       HERO PANEL: Forest Green Rounded Container
+       ====================================================================== -->
+  <header class="dashboard-hero fade-in-up">
+    <!-- Floating Pill Navigation Strip -->
+    <nav class="hero-nav" aria-label="Main Navigation">
+      <div class="agency-brand">
+        <!-- Botanical brand icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2L12 22"/>
+          <path d="M12 7C8 7 5 10 5 14C5 18 8 21 12 21"/>
+          <path d="M12 7C16 7 19 10 19 14C19 18 16 21 12 21"/>
+        </svg>
+        <span>The Agency</span>
+      </div>
+
+      <!-- Floating pill nav links -->
+      <ul class="nav-pills">
+        <li><a href="#about" class="active">About</a></li>
+        <li><a href="#traffic">Traffic</a></li>
+        <li><a href="#case-file-section">Case File</a></li>
+        <li><a href="#incidents">Protocol</a></li>
+        <li><a href="#watchlist">Watchlist</a></li>
+        <li><a href="#archive">Archive</a></li>
+      </ul>
+
+      <!-- User cluster & Logout button -->
+      <div class="hero-user-cluster">
+        <div class="user-badge">
+          <div id="agent-monogram" class="monogram-avatar" title="Authenticated Agent">··</div>
+          <span id="agent-display-name" class="user-name">Loading…</span>
+        </div>
+
+        <span class="pill-btn pill-btn-outline-cream" style="padding:0.45rem 1.1rem; font-size:0.8125rem;">Presentation demo</span>
+      </div>
+    </nav>
+
+    <!-- Hero Editorial & Headline -->
+    <div class="hero-content">
+      <div class="hero-editorial">
+        <span class="tiny-label" style="color:rgba(244,241,234,0.65);">Quiet Intelligence Unit</span>
+        <h1 class="headline">Calm. Secure. <em>Watched.</em></h1>
+        <div class="hero-status-line" aria-live="polite" aria-atomic="true">
+          <span id="network-status-dot" class="status-dot"></span>
+          <span id="network-status-text">All quiet on the network.</span>
+        </div>
+      </div>
+
+      <!-- Attack Simulation Trigger in Hero -->
+      <div class="hero-simulation-block">
+        <div class="action-buttons-group">
+          <!-- Stage 8: Pill Button + Vector Dropdown -->
+          <div class="attack-pill-group">
+            <button id="launch-attack-btn" class="pill-btn pill-btn-outline-terracotta" title="Simulate perimeter intrusion">
+              <span class="terracotta-dot"></span>
+              <span id="launch-attack-label">Launch Attack</span>
+            </button>
+            <select id="attack-type-select" class="attack-type-select" aria-label="Select attack vector">
+              <option value="random">Vector: Random</option>
+              <option value="ddos">Vector: DDoS (SYN)</option>
+              <option value="botnet">Vector: Botnet (5 IPs)</option>
+              <option value="port_scan">Vector: Port Scan</option>
+              <option value="brute_force">Vector: SSH Brute</option>
+            </select>
+          </div>
+          <button id="reset-demo-btn" class="pill-btn pill-btn-outline-cream" style="margin-left:0.5rem; font-size:0.8125rem; padding:0.45rem 1rem;" title="Reset demo simulation state">
+            <span>Reset demo</span>
+          </button>
+        </div>
+
+        <!-- 60-Second Auto-demo Switch -->
+        <div class="auto-demo-cluster" title="Launch an attack simulation automatically every 60 seconds">
+          <label class="switch-toggle" for="auto-demo-switch">
+            <input type="checkbox" id="auto-demo-switch" aria-label="Toggle unattended 60-second auto-demo cycle">
+            <span class="slider-round"></span>
+          </label>
+          <span class="auto-demo-label">Auto-demo (60s)</span>
+        </div>
+
+        <span class="tiny-helper-text">Simulation only</span>
+      </div>
+
+      <!-- Date Display in Hero via JS -->
+      <div class="hero-date-block">
+        <span class="tiny-label">Surveillance Cycle</span>
+        <div id="today-date-dashboard" class="date-value">Loading date…</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       MAIN CONTENT: On Warm Cream Surfaces
+       ====================================================================== -->
+  <main>
+
+    <!-- Row of Three Numbered Stat Cards -->
+    <section id="about" class="content-section" aria-label="Key Performance Indicators">
+      <div class="stats-grid">
+        <!-- 01 Card -->
+        <article class="stat-card fade-in-up delay-1">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar I</span>
+            <span class="card-number">01</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Seamless Monitoring</h2>
+            <p class="stat-card-caption">Zero friction observability across all distributed estate boundaries.</p>
+          </div>
+        </article>
+
+        <!-- 02 Card -->
+        <article class="stat-card fade-in-up delay-2">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar II</span>
+            <span class="card-number">02</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Timeless Defense</h2>
+            <p class="stat-card-caption">Proactive heuristic cloaking and automated containment rituals.</p>
+          </div>
+        </article>
+
+        <!-- 03 Card -->
+        <article class="stat-card fade-in-up delay-3">
+          <div class="stat-card-top">
+            <span class="tiny-label">Pillar III</span>
+            <span class="card-number">03</span>
+          </div>
+          <div>
+            <h2 class="stat-card-title">Quiet Intelligence</h2>
+            <p class="stat-card-caption">Discreet Bayesian appraisal operating without audible alert noise.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Network Traffic Paper Card -->
+    <section id="traffic" class="content-section" aria-label="Network Traffic Telemetry">
+      <div class="traffic-card fade-in-up">
+        <div class="traffic-header">
+          <div>
+            <span class="tiny-label">Telemetry Feed</span>
+            <h2 class="serif-headline" style="font-size:2.2rem; color:var(--ink);">Network Traffic</h2>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span class="tiny-label" style="margin:0;">Sample rate: 100ms</span>
+            <span class="pill-btn pill-btn-outline-dark" style="padding:0.4rem 0.95rem; font-size:0.75rem; pointer-events:none;">
+              Baseline Nominal
+            </span>
+          </div>
+        </div>
+
+        <!-- Three Live Telemetry Metrics -->
+        <div class="traffic-metrics-strip">
+          <div class="metric-pair">
+            <span class="tiny-label">Packets / sec</span>
+            <span id="stat-pps" class="metric-value">0</span>
+          </div>
+          <div class="metric-pair">
+            <span class="tiny-label">Average size</span>
+            <span id="stat-avg-size" class="metric-value">0 B</span>
+          </div>
+          <div class="metric-pair">
+            <span class="tiny-label">Blocked</span>
+            <span id="stat-blocked" class="metric-value">0</span>
+          </div>
+        </div>
+
+        <!-- Real-Time Chart Canvas -->
+        <div class="traffic-chart-container">
+          <canvas id="traffic-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cover Story Panel: Dark Warm Bark Brown -->
+    <section class="content-section" aria-label="Cover Story">
+      <div class="cover-story-panel fade-in-up">
+        <div class="cover-story-grid">
+          <div>
+            <span class="tiny-label" style="color:rgba(244,241,234,0.6);">Special Editorial Dispatch</span>
+            <h2 class="serif-headline" style="font-size:clamp(2.4rem, 4.5vw, 3.8rem); line-height:1.08; margin:0.75rem 0 1.25rem 0; color:var(--cream);">
+              The Architecture of <em>Unseen Sanctuary.</em>
+            </h2>
+            <p style="color:rgba(244,241,234,0.76); line-height:1.65; max-width:520px; font-size:1.025rem;">
+              Behind high stone walls and ancient cypress groves, our perimeter probes trace every incoming packet with the discretion of an invisible concierge.
+            </p>
+          </div>
+
+          <!-- Frosted Glass Card with Dimmed Placeholder Headline -->
+          <div class="cover-frosted-card" id="cover-story-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="tiny-label" style="color:var(--olive);">Active Dispatch Preview</span>
+              <span id="cover-story-resolved-tag" class="resolved-tag" style="display:none;">Resolved</span>
+            </div>
+            <h3 class="dimmed-headline" id="cover-story-headline">A Disturbance at the Gate</h3>
+            <div id="cover-story-body">
+              <p class="placeholder-copy">
+                A gentle anomaly emerged along the northern perimeter relay at twilight. Correlated via heuristic analysis, quarantined before the estate bells tolled. Full incident log reserved for active dispatch.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         STAGE 8: THE CASE FILE (WHEN, WHERE, HOW) & NETWORK TOPOLOGY
+         ====================================================================== -->
+    <section id="case-file-section" class="content-section" aria-label="The Case File">
+      <div class="case-file-card fade-in-up" id="case-file-card">
+        <!-- Header with Incident ID and Status Chip -->
+        <header class="case-file-header">
+          <div>
+            <div class="case-file-badges">
+              <span class="tiny-label" style="color:var(--olive);">Active Dossier</span>
+              <span id="case-file-id" class="case-id-badge">Incident #--</span>
+            </div>
+            <h2 class="serif-headline" id="case-file-title" style="font-size:2.4rem; color:var(--ink); margin:0.25rem 0 0 0;">
+              The Case File
+            </h2>
+          </div>
+          <div class="case-file-status-wrap">
+            <span id="case-file-status-chip" class="status-chip chip-detected">Awaiting Intrusion</span>
+            <span id="case-file-timer" class="case-timer-pill" title="Elapsed duration">0.0s elapsed</span>
+          </div>
+        </header>
+
+        <!-- Botnet Attacker Tabs Strip (hidden when single attacker) -->
+        <div id="case-file-tabs-strip" class="case-tabs-strip" style="display:none;" role="tablist" aria-label="Attacker Nodes">
+          <!-- Dynamically populated via JS for botnet -->
+        </div>
+
+        <!-- 3-Column Dossier Grid: WHEN, WHERE, HOW -->
+        <div class="case-file-grid">
+
+          <!-- 1. WHEN COLUMN -->
+          <div class="case-grid-cell" id="case-when-cell">
+            <div class="cell-tag">
+              <span class="col-roman">I.</span>
+              <span class="tiny-label">Temporal Record</span>
+            </div>
+            <h3 class="cell-title">When</h3>
+            <div class="when-metrics">
+              <div class="when-metric-row">
+                <span class="when-label">Detected at</span>
+                <span id="case-detected-at" class="when-val">—</span>
+              </div>
+              <div class="when-metric-row">
+                <span class="when-label">Duration</span>
+                <span id="case-duration" class="when-val">0.0s</span>
+              </div>
+              <div class="when-metric-row">
+                <span class="when-label">Neutralized at</span>
+                <span id="case-resolved-at" class="when-val">Pending</span>
+              </div>
+              <div class="when-metric-row">
+                <span class="when-label">Surveillance</span>
+                <span id="case-surveillance-status" class="when-val">Continuous</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. WHERE COLUMN (with SVG World Map) -->
+          <div class="case-grid-cell" id="case-where-cell">
+            <div class="cell-tag">
+              <span class="col-roman">II.</span>
+              <span class="tiny-label">Spatial Origin</span>
+            </div>
+            <h3 class="cell-title">Where</h3>
+            <div class="where-details">
+              <div class="where-profile">
+                <span id="case-where-flag" class="where-flag">🌐</span>
+                <div>
+                  <div id="case-where-location" class="where-city-country">Awaiting coordinate fix</div>
+                  <div id="case-where-ip" class="where-ip-coord">0.0.0.0 • Lat 0.0000, Lon 0.0000</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SVG World Map with Glowing Dots & Connecting Arcs to London HQ -->
+            <div class="world-map-wrapper" aria-label="Geographic Attack Origin Map">
+              <svg id="world-map-svg" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet" class="world-map-svg">
+                <!-- Map Background -->
+                <rect width="800" height="400" rx="10" class="map-bg" />
+
+                <!-- Subtle Lat/Lon Grid lines -->
+                <line x1="0" y1="200" x2="800" y2="200" class="map-grid-line map-equator" />
+                <line x1="400" y1="0" x2="400" y2="400" class="map-grid-line map-meridian" />
+                <line x1="0" y1="100" x2="800" y2="100" class="map-grid-line" stroke-dasharray="2,4" />
+                <line x1="0" y1="300" x2="800" y2="300" class="map-grid-line" stroke-dasharray="2,4" />
+                <line x1="200" y1="0" x2="200" y2="400" class="map-grid-line" stroke-dasharray="2,4" />
+                <line x1="600" y1="0" x2="600" y2="400" class="map-grid-line" stroke-dasharray="2,4" />
+
+                <!-- Stylized Minimal World Continents -->
+                <g class="world-continents">
+                  <!-- North America -->
+                  <path d="M 120 70 Q 180 50 250 80 Q 280 120 230 160 Q 180 180 150 140 Z" class="continent-path" />
+                  <!-- South America -->
+                  <path d="M 230 200 Q 300 220 290 280 Q 260 360 230 360 Q 200 280 230 200 Z" class="continent-path" />
+                  <!-- Europe -->
+                  <path d="M 370 70 Q 450 60 460 120 Q 420 140 370 120 Z" class="continent-path" />
+                  <!-- Africa -->
+                  <path d="M 370 140 Q 470 150 460 240 Q 430 320 390 310 Q 360 220 370 140 Z" class="continent-path" />
+                  <!-- Asia -->
+                  <path d="M 460 70 Q 650 50 710 120 Q 660 200 520 170 Q 470 130 460 70 Z" class="continent-path" />
+                  <!-- Australia -->
+                  <path d="M 640 270 Q 720 260 710 320 Q 640 340 640 270 Z" class="continent-path" />
+                </g>
+
+                <!-- London HQ Marker (The Agency Estate) -->
+                <g id="agency-hq-marker" transform="translate(399.7, 85.5)">
+                  <circle r="9" class="hq-pulse-outer" />
+                  <circle r="4.5" class="hq-core-dot" />
+                  <text x="8" y="3" class="map-hq-label">Agency HQ (London)</text>
+                </g>
+
+                <!-- Dynamic Arcs & Attacker Nodes Group -->
+                <g id="map-dynamic-attackers"></g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- 3. HOW COLUMN (with Vertical Chronicle / Timeline) -->
+          <div class="case-grid-cell" id="case-how-cell">
+            <div class="cell-tag">
+              <span class="col-roman">III.</span>
+              <span class="tiny-label">Tactical Chronicle</span>
+            </div>
+            <h3 class="cell-title">How</h3>
+            
+            <div class="how-summary">
+              <div class="how-meta-item">
+                <span class="tiny-label" style="margin:0;">Vector</span>
+                <span id="case-how-vector" class="how-val">DDoS Flood</span>
+              </div>
+              <div class="how-meta-item">
+                <span class="tiny-label" style="margin:0;">Rule Fired</span>
+                <span id="case-how-rule" class="how-val">Awaiting Horn clause</span>
+              </div>
+            </div>
+
+            <!-- Vertical Chronicle Timeline -->
+            <div class="case-timeline-wrapper">
+              <div class="case-timeline" id="case-chronicle-timeline">
+                <div class="timeline-step step-pending" id="step-node-detect">
+                  <div class="step-indicator">0.0s</div>
+                  <div class="step-content">
+                    <div class="step-name">Detected</div>
+                    <div class="step-desc" id="step-desc-detect">Heuristic logic engine engaged</div>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-pending" id="step-node-bayes">
+                  <div class="step-indicator">1.0s</div>
+                  <div class="step-content">
+                    <div class="step-name">Bayes Model</div>
+                    <div class="step-desc" id="step-desc-bayes">Probability assessment (calculating)</div>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-pending" id="step-node-plan">
+                  <div class="step-indicator">2.0s</div>
+                  <div class="step-content">
+                    <div class="step-name">Defense Planned</div>
+                    <div class="step-desc" id="step-desc-plan">STRIPS state-space synthesized</div>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-pending" id="step-node-report">
+                  <div class="step-indicator">3.0s</div>
+                  <div class="step-content">
+                    <div class="step-name">Concierge Dispatch</div>
+                    <div class="step-desc" id="step-desc-report">Editorial incident report generated</div>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-pending" id="step-node-resolve">
+                  <div class="step-indicator">4.0s</div>
+                  <div class="step-content">
+                    <div class="step-name">Attacker Neutralized</div>
+                    <div class="step-desc" id="step-desc-resolve">Firewall engaged • Sanctuary restored</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Section 3: NETWORK TOPOLOGY MAP & AI ROUTE TRACING -->
+        <div class="topology-trace-panel" id="topology-trace-panel">
+          <div class="topology-header">
+            <div>
+              <span class="tiny-label" style="color:var(--olive);">Estate Infrastructure Topology</span>
+              <h3 class="serif-headline" style="font-size:1.6rem; color:var(--ink); margin:0.25rem 0 0 0;">
+                AI Route Tracing • <em>How We Reached It</em>
+              </h3>
+            </div>
+            <!-- Search Speedup Comparison Pill -->
+            <div id="ai-search-comparison-pill" class="pill-tag pill-tag-forest">
+              AI Search: Standby
+            </div>
+          </div>
+
+          <!-- Network Topology SVG Diagram -->
+          <div class="topology-svg-wrapper">
+            <svg id="topology-svg" viewBox="0 0 760 220" preserveAspectRatio="xMidYMid meet" class="topology-svg">
+              <!-- Connection Edges -->
+              <g class="topology-edges">
+                <!-- Distractor / Alternative branches explored by BFS -->
+                <line x1="180" y1="110" x2="250" y2="40" class="edge-line edge-distractor" />
+                <line x1="250" y1="40" x2="440" y2="110" class="edge-line edge-distractor" />
+                <line x1="180" y1="110" x2="250" y2="180" class="edge-line edge-distractor" />
+                <line x1="250" y1="180" x2="440" y2="110" class="edge-line edge-distractor" />
+
+                <!-- Primary Ingress route edges -->
+                <line x1="60" y1="110" x2="180" y2="110" class="edge-line" id="edge-attacker-gateway" />
+                <line x1="180" y1="110" x2="310" y2="110" class="edge-line" id="edge-gateway-firewall" />
+                <line x1="310" y1="110" x2="440" y2="110" class="edge-line" id="edge-firewall-core" />
+                
+                <!-- Target service links from Core Switch -->
+                <line x1="440" y1="110" x2="620" y2="50" class="edge-line" id="edge-core-web" />
+                <line x1="440" y1="110" x2="620" y2="110" class="edge-line" id="edge-core-ssh" />
+                <line x1="440" y1="110" x2="620" y2="170" class="edge-line" id="edge-core-db" />
+              </g>
+
+              <!-- Distractor nodes -->
+              <g class="distractor-nodes">
+                <circle cx="250" cy="40" r="10" class="node-circle node-distractor" />
+                <text x="250" y="24" class="node-label node-label-muted">Perimeter IDS</text>
+
+                <circle cx="250" cy="180" r="10" class="node-circle node-distractor" />
+                <text x="250" y="202" class="node-label node-label-muted">DMZ Honeypot</text>
+              </g>
+
+              <!-- Primary Estate Topology Nodes -->
+              <g class="topology-nodes">
+                <!-- Attacker Node -->
+                <g id="topo-node-attacker" class="topo-node" transform="translate(60, 110)">
+                  <circle r="16" class="node-circle node-attacker" />
+                  <text y="4" class="node-icon">⚡</text>
+                  <text y="32" class="node-label" id="topo-label-attacker">Attacker</text>
+                </g>
+
+                <!-- Gateway Router -->
+                <g id="topo-node-gateway" class="topo-node" transform="translate(180, 110)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">⛶</text>
+                  <text y="32" class="node-label">Gateway Router</text>
+                </g>
+
+                <!-- External Firewall -->
+                <g id="topo-node-firewall" class="topo-node" transform="translate(310, 110)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">🛡</text>
+                  <text y="32" class="node-label">External Firewall</text>
+                </g>
+
+                <!-- Core Switch -->
+                <g id="topo-node-core" class="topo-node" transform="translate(440, 110)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">⚙</text>
+                  <text y="32" class="node-label">Core Switch</text>
+                </g>
+
+                <!-- Web Server (Port 80) -->
+                <g id="topo-node-web" class="topo-node" transform="translate(620, 50)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">🌐</text>
+                  <text y="32" class="node-label">Web Server (80)</text>
+                </g>
+
+                <!-- SSH Bastion (Port 22) -->
+                <g id="topo-node-ssh" class="topo-node" transform="translate(620, 110)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">🔒</text>
+                  <text y="32" class="node-label">SSH Bastion (22)</text>
+                </g>
+
+                <!-- Database Server -->
+                <g id="topo-node-db" class="topo-node" transform="translate(620, 170)">
+                  <circle r="16" class="node-circle" />
+                  <text y="4" class="node-icon">🗄</text>
+                  <text y="32" class="node-label">Database Server</text>
+                </g>
+              </g>
+            </svg>
+          </div>
+
+          <!-- Route Search Details Footnote -->
+          <div class="search-details-strip">
+            <div class="search-stat-item">
+              <span class="tiny-label">BFS Search</span>
+              <span id="bfs-explored-val" class="search-val">Standby (0 nodes)</span>
+            </div>
+            <div class="search-stat-item">
+              <span class="tiny-label">A* Heuristic Search</span>
+              <span id="astar-explored-val" class="search-val">Standby (0 nodes)</span>
+            </div>
+            <div class="search-stat-item">
+              <span class="tiny-label">Path Ingress Order</span>
+              <span id="ai-path-val" class="search-val">—</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Three Numbered Columns on Soft Sage Green Panel -->
+    <section id="incidents" class="content-section" aria-label="Incident Methodology">
+      <div class="sage-feature-panel fade-in-up">
+        <span class="tiny-label" style="color:var(--forest);">Operational Protocol</span>
+        <h2 class="serif-headline panel-headline">Methodology of the <em>Concierge.</em></h2>
+
+        <div class="columns-grid">
+          <!-- Column 1: Recognition -->
+          <div class="feature-col" id="recognition-col">
+            <span class="col-roman">I.</span>
+            <span class="tiny-label" style="color:var(--olive);">Trace & Tag</span>
+            <h3 id="recognition-title">Recognition</h3>
+            <div id="recognition-body">
+              <p>Signature classification distinguishes mundane automated probes from tailored intrusions targeting private infrastructure.</p>
+            </div>
+          </div>
+
+          <!-- Column 2: Probability -->
+          <div class="feature-col" id="probability-col">
+            <span class="col-roman">II.</span>
+            <span class="tiny-label" style="color:var(--olive);">Bayesian Model</span>
+            <h3 id="probability-title">Probability</h3>
+            <div id="probability-body">
+              <p>Dynamic threat scoring weighs anomalous packet cadence against verified behavioral baselines established over seasonal cycles.</p>
+            </div>
+          </div>
+
+          <!-- Column 3: The Plan -->
+          <div class="feature-col" id="plan-col">
+            <span class="col-roman">III.</span>
+            <span class="tiny-label" style="color:var(--olive);">Discreet Action</span>
+            <h3 id="plan-title">The Plan</h3>
+            <div id="plan-body">
+              <p>Immediate tactical containment isolates adversarial route propagation while network consumers experience uninterrupted serenity.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Magazine Feature: Incident Report -->
+    <section class="content-section" aria-label="Incident Report Feature">
+      <article class="magazine-section fade-in-up" id="incident-report-article">
+        <header class="magazine-header">
+          <div>
+            <span class="tiny-label" id="incident-report-dispatch-no">Dispatch Dispatch No. 84</span>
+            <h2 class="serif-headline" id="incident-report-headline" style="font-size:2.5rem; color:var(--ink);">Incident Report</h2>
+          </div>
+          <div class="magazine-byline-cluster">
+            <span class="magazine-byline" id="incident-report-byline-text">Written by our AI correspondent</span>
+            <span id="incident-report-model-tag" class="pill-tag pill-tag-olive" style="display:none;">Gemini</span>
+            <span id="incident-report-timestamp" class="report-timestamp"></span>
+          </div>
+        </header>
+
+        <div class="magazine-body" id="incident-report-body-container">
+          <div class="editorial-text" id="incident-report-body">
+            <p>
+              <span class="drop-cap">A</span>t three minutes past midnight, beneath an overcast autumn sky, the gateway telemetry recorded an unannounced sequence of syn-flood packets originating from a distributed residential cluster. The intrusion was calculated to mimic casual browsing, yet the cadence betrayed synthetic coordination.
+            </p>
+            <p>
+              Within eleven milliseconds, the heuristic engine engaged silent diversion protocols. Rather than escalating audible alerts or disrupting ongoing media streams within the main villa, the ingress route was gently shifted to an ephemeral virtual sandbox. The attacker perceived success; the estate remained tranquil.
+            </p>
+          </div>
+
+          <aside class="magazine-pullquote" id="incident-report-pullquote-wrap">
+            <blockquote id="incident-report-pullquote">
+              “In the silence of the estate, true defense is invisible, anticipating the whisper before the storm.”
+            </blockquote>
+            <cite id="incident-report-pullquote-cite">— Concierge Journal, Autumn Folio</cite>
+          </aside>
+        </div>
+      </article>
+    </section>
+
+    <!-- ======================================================================
+         STAGE 8: WATCHLIST (WHO ATTACKED US)
+         ====================================================================== -->
+    <section id="watchlist" class="content-section" aria-label="Attacker Watchlist">
+      <div class="watchlist-panel fade-in-up">
+        <div class="watchlist-header">
+          <div>
+            <span class="tiny-label">Perimeter Intelligence Log</span>
+            <h2 class="serif-headline" style="font-size:2.4rem; color:var(--ink); margin:0.25rem 0 0 0;">
+              Watchlist • <em>Offending Ingress Pool</em>
+            </h2>
+          </div>
+          <span class="tiny-label" id="watchlist-count-badge">0 Monitored Entries</span>
+        </div>
+
+        <div class="watchlist-table-wrapper">
+          <table class="watchlist-table">
+            <thead>
+              <tr>
+                <th scope="col">Attacker IP</th>
+                <th scope="col">Origin Location</th>
+                <th scope="col">Attack Vector</th>
+                <th scope="col">Max Probability</th>
+                <th scope="col">Packets Sent</th>
+                <th scope="col">Defense Status</th>
+              </tr>
+            </thead>
+            <tbody id="watchlist-table-body">
+              <tr class="watchlist-empty-row">
+                <td colspan="6" class="empty-state-cell">No intrusion signatures logged in current surveillance cycle.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Back Issues Accordion List -->
+    <section id="archive" class="content-section" aria-label="Archived Issues">
+      <div class="accordion-section fade-in-up">
+        <div class="accordion-title-wrap">
+          <span class="tiny-label">Historical Dispatches</span>
+          <h2 class="serif-headline" style="font-size:2.4rem; color:var(--ink);">Back Issues</h2>
+        </div>
+
+        <ul class="accordion-list" id="back-issues-list">
+          <li class="back-issues-empty">Gathering historical archives…</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Dashboard Footer -->
+  <footer class="dashboard-footer">
+    <span>The Agency • Boutique Cybersecurity Concierge • All Rights Reserved</span>
+  </footer>
+
+  <!-- Pinned Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="demo.js"></script>
+</body>
+</html>
